@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0] — 2026-05-28
+
+### Added
+- Gemini CLI runner (`gemini-cli`)
+- GitHub Actions CI: shellcheck + syntax + smoke test
+
+## [0.2.0] — 2026-05-28
+
+### Added
+- Mock runner for testing
+- End-to-end pipeline integration test
+
 ## [0.1.1] — 2026-05-28
 
 ### Added
@@ -23,5 +35,7 @@
 - Makefile for convenience
 - MIT License
 
+[0.3.0]: https://github.com/counterfactual5/stageforge/releases/tag/v0.3.0
+[0.2.0]: https://github.com/counterfactual5/stageforge/releases/tag/v0.2.0
 [0.1.1]: https://github.com/counterfactual5/stageforge/releases/tag/v0.1.1
 [0.1.0]: https://github.com/counterfactual5/stageforge/releases/tag/v0.1.0
