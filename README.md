@@ -129,6 +129,19 @@ stageforge run my-app -t "..." -m o3
 stageforge run my-app -t "..." --planner-model sonnet --builder-model sonnet --reviewer-model o3
 ```
 
+### Trading autopilot integration
+
+Each `stageforge run` allocates a **run ID** and exports it for downstream trading CLIs
+(`evm-wallet-scanner`, `uniswap-autopilot`, `hyperliquid-autopilot`, `polymarket-autopilot`):
+
+| Variable | Set when |
+|----------|----------|
+| `STAGEFORGE_RUN_ID` | Always — ties signal files, state machine checkpoints, and audit JSONL |
+| `POLICY_FILE` | When `~/.stageforge/policy.yaml`, `policy.yml`, or `policy.json` exists |
+
+Copy `policy.yaml` from any autopilot repo to `~/.stageforge/` before running trades in a pipeline.
+See [evm-wallet-scanner/RISK_POLICY.md](https://github.com/counterfactual5/evm-wallet-scanner/blob/master/RISK_POLICY.md) for rule reference and drill checklist.
+
 ## Configuration
 
 Each project gets a `stageforge.yaml`:
