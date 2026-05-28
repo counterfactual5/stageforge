@@ -1,0 +1,24 @@
+# stageforge.yaml — Project configuration
+# Place this file in your project root or specify with -c
+
+# Agent runner: claude-code | codex-cli | /path/to/custom-runner.sh
+runner: claude-code
+
+# Model routing — map stages to specific models
+# Leave empty to use the runner's default model
+models:
+  planner: ""
+  builder: ""
+  reviewer: ""
+  consultant: ""
+
+# Fallback model when primary fails after max retries
+fallback: ""
+
+# Pipeline settings
+max_retries: 3
+
+# Stage configuration
+# Uncomment to skip specific stages
+# skip_stages:
+#   - consultant

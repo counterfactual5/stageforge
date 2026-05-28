@@ -1,0 +1,11 @@
+{
+  "name": "stageforge",
+  "version": "0.1.0",
+  "description": "Agent-agnostic multi-stage autonomous development framework. Plan → Build → Review → Deliver, with any AI coding agent.",
+  "author": "counterfactual5",
+  "license": "MIT",
+  "repository": "https://github.com/counterfactual5/stageforge",
+  "keywords": ["development", "automation", "agent", "pipeline", "claude-code", "codex-cli"],
+  "commands": ["stageforge"],
+  "skills": ["stageforge"]
+}
