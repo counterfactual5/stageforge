@@ -1,0 +1,13 @@
+# stageforge.yaml — Project configuration
+# See https://github.com/counterfactual5/stageforge for full documentation
+
+runner: claude-code
+
+models:
+  planner: ""
+  builder: ""
+  reviewer: ""
+  consultant: ""
+
+fallback: ""
+max_retries: 3
