@@ -44,7 +44,7 @@ task-cli/
 - Use SQLite via stdlib sqlite3
 - CLI via argparse
 PLAN
-            echo "$(date -Iseconds)" > "$workdir/stages/.stage_0_done"
+            echo "$(date_iso)" > "$workdir/stages/.stage_0_done"
             echo "[mock] Stage 0 (Planner) done."
             ;;
             
@@ -235,7 +235,7 @@ DEPS
             # Run tests
             cd "$workdir" && python3 -m pytest tests/ -v 2>&1 || python3 tests/test_main.py 2>&1 || true
             
-            echo "$(date -Iseconds)
+            echo "$(date_iso)
 Files: src/main.py, tests/test_main.py, requirements.txt" > "$workdir/stages/.stage_1_done"
             echo "[mock] Stage 1 (Builder) done."
             ;;
@@ -245,7 +245,7 @@ Files: src/main.py, tests/test_main.py, requirements.txt" > "$workdir/stages/.st
             cat > "$workdir/docs/TEST_REPORT.md" <<'REPORT'
 # Test Report
 
-**Date**: $(date -Iseconds)
+**Date**: $(date_iso)
 **Reviewer**: stageforge-mock
 
 ## Checklist
@@ -268,7 +268,7 @@ None.
 Code quality is good. All tests pass. No security issues detected.
 REPORT
             
-            echo "$(date -Iseconds)
+            echo "$(date_iso)
 Issues found: 0
 Issues fixed: 0" > "$workdir/stages/.stage_2_done"
             echo "[mock] Stage 2 (Reviewer) done."
@@ -303,7 +303,7 @@ python3 src/main.py delete 2
 ```
 README
             
-            echo "$(date -Iseconds)
+            echo "$(date_iso)
 README: ok
 TestReport: ok" > "$workdir/stages/.stage_3_done"
             echo "[mock] Stage 3 (Consultant) done."

@@ -4,9 +4,10 @@
 
 set -euo pipefail
 
-VERSION="0.3.0"
+VERSION="0.4.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$PROJECT_ROOT/core/compat.sh"
 
 # ─── Colors ───
 RED='\033[0;31m'
@@ -89,11 +90,11 @@ load_config() {
     if [[ -f "$config_path" ]]; then
         info "Loading config: $config_path"
         # Simple YAML parsing via grep (no yq dependency required)
-        PLANNER_MODEL="${PLANNER_MODEL:-$(grep -oP 'planner:\s*\K.*' "$config_path" 2>/dev/null || true)}"
-        BUILDER_MODEL="${BUILDER_MODEL:-$(grep -oP 'builder:\s*\K.*' "$config_path" 2>/dev/null || true)}"
-        REVIEWER_MODEL="${REVIEWER_MODEL:-$(grep -oP 'reviewer:\s*\K.*' "$config_path" 2>/dev/null || true)}"
-        CONSULTANT_MODEL="${CONSULTANT_MODEL:-$(grep -oP 'consultant:\s*\K.*' "$config_path" 2>/dev/null || true)}"
-        RUNNER="${RUNNER:-$(grep -oP 'runner:\s*\K.*' "$config_path" 2>/dev/null || true)}"
+        PLANNER_MODEL="${PLANNER_MODEL:-$(grep_oP 'planner:\s*\\K.*' "$config_path" || true)}"
+        BUILDER_MODEL="${BUILDER_MODEL:-$(grep_oP 'builder:\s*\\K.*' "$config_path" || true)}"
+        REVIEWER_MODEL="${REVIEWER_MODEL:-$(grep_oP 'reviewer:\s*\\K.*' "$config_path" || true)}"
+        CONSULTANT_MODEL="${CONSULTANT_MODEL:-$(grep_oP 'consultant:\s*\\K.*' "$config_path" || true)}"
+        RUNNER="${RUNNER:-$(grep_oP 'runner:\s*\\K.*' "$config_path" || true)}"
     fi
     
     # Apply global model override
@@ -306,7 +307,7 @@ run_pipeline() {
     fi
     
     # Pipeline complete
-    echo "$(date -Iseconds)" > "$project_dir/stages/.pipeline_done"
+    echo "$(date_iso)" > "$project_dir/stages/.pipeline_done"
     echo ""
     ok "Pipeline complete! 🎉"
     cmd_status "$project_dir"
