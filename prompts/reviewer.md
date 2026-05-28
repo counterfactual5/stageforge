@@ -68,11 +68,17 @@ Review EVERY item below and mark each as ✅ or ❌ in your report:
 
 ## Completion
 
-After review and fixes:
+After review and fixes, write the signal file embedding the Run ID provided by
+the orchestrator (also exported as `$STAGEFORGE_RUN_ID`). The orchestrator
+treats the stage as failed if the id does not match.
+
 ```bash
-echo "$(date -Iseconds)
-Issues found: <count>
-Issues fixed: <count>" > stages/.stage_2_done
+{
+  echo "$(date -Iseconds)"
+  echo "run_id: ${STAGEFORGE_RUN_ID:?STAGEFORGE_RUN_ID must be set by orchestrator}"
+  echo "Issues found: <count>"
+  echo "Issues fixed: <count>"
+} > stages/.stage_2_done
 ```
 
 Do NOT send any messages to the user. Your only deliverable is the files you write.

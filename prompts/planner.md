@@ -50,9 +50,16 @@ When modifying existing code:
 
 ## Completion
 
-After writing `docs/PLAN.md`, create the signal file:
+After writing `docs/PLAN.md`, create the signal file. The orchestrator passes a
+`Run ID` to you in the prompt and also exports it as `$STAGEFORGE_RUN_ID`. You
+MUST write that exact id into the signal file — the orchestrator rejects the
+stage as failed (stale signal) if the id does not match.
+
 ```bash
-echo "$(date -Iseconds)" > stages/.stage_0_done
+{
+  echo "$(date -Iseconds)"
+  echo "run_id: ${STAGEFORGE_RUN_ID:?STAGEFORGE_RUN_ID must be set by orchestrator}"
+} > stages/.stage_0_done
 ```
 
 Do NOT send any messages to the user. Your only deliverable is the files you write.
