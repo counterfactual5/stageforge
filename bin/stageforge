@@ -316,8 +316,13 @@ run_pipeline() {
     run_id=$(signal_init_run "$project_dir")
     export STAGEFORGE_RUN_ID="$run_id"
     export STAGEFORGE_RUN_ID="$(signal_current_run_id "$project_dir")"
+    # Match policy.py resolution: yaml/yml first, then json.
     if [ -f "$HOME/.stageforge/policy.yaml" ]; then
         export POLICY_FILE="$HOME/.stageforge/policy.yaml"
+    elif [ -f "$HOME/.stageforge/policy.yml" ]; then
+        export POLICY_FILE="$HOME/.stageforge/policy.yml"
+    elif [ -f "$HOME/.stageforge/policy.json" ]; then
+        export POLICY_FILE="$HOME/.stageforge/policy.json"
     fi
 
     info "Runner: $(runner_name)"
