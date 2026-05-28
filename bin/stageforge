@@ -4,9 +4,10 @@
 
 set -euo pipefail
 
-VERSION="0.3.0"
+VERSION="0.4.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$PROJECT_ROOT/core/compat.sh"
 
 # ─── Colors ───
 RED='\033[0;31m'
@@ -92,17 +93,17 @@ stage() { echo -e "\n${CYAN}${BOLD}━━━ Stage $1: $2 ━━━${NC}"; }
 load_config() {
     local project_dir="$1"
     local config_path="${CONFIG_FILE:-${project_dir}/stageforge.yaml}"
-    
+
     if [[ -f "$config_path" ]]; then
         info "Loading config: $config_path"
         # Simple YAML parsing via grep (no yq dependency required)
-        PLANNER_MODEL="${PLANNER_MODEL:-$(grep -oP 'planner:\s*\K.*' "$config_path" 2>/dev/null || true)}"
-        BUILDER_MODEL="${BUILDER_MODEL:-$(grep -oP 'builder:\s*\K.*' "$config_path" 2>/dev/null || true)}"
-        REVIEWER_MODEL="${REVIEWER_MODEL:-$(grep -oP 'reviewer:\s*\K.*' "$config_path" 2>/dev/null || true)}"
-        CONSULTANT_MODEL="${CONSULTANT_MODEL:-$(grep -oP 'consultant:\s*\K.*' "$config_path" 2>/dev/null || true)}"
-        RUNNER="${RUNNER:-$(grep -oP 'runner:\s*\K.*' "$config_path" 2>/dev/null || true)}"
+        PLANNER_MODEL="${PLANNER_MODEL:-$(grep_oP 'planner:\s*\\K.*' "$config_path" || true)}"
+        BUILDER_MODEL="${BUILDER_MODEL:-$(grep_oP 'builder:\s*\\K.*' "$config_path" || true)}"
+        REVIEWER_MODEL="${REVIEWER_MODEL:-$(grep_oP 'reviewer:\s*\\K.*' "$config_path" || true)}"
+        CONSULTANT_MODEL="${CONSULTANT_MODEL:-$(grep_oP 'consultant:\s*\\K.*' "$config_path" || true)}"
+        RUNNER="${RUNNER:-$(grep_oP 'runner:\s*\\K.*' "$config_path" || true)}"
     fi
-    
+
     # Apply global model override
     if [[ -n "$MODEL" ]]; then
         PLANNER_MODEL="$MODEL"
@@ -128,7 +129,7 @@ detect_runner() {
         fi
         error "Runner not found: $RUNNER"
     fi
-    
+
     # Auto-detect: try each built-in runner
     for runner_name in claude-code codex-cli; do
         local runner_path="$PROJECT_ROOT/runners/${runner_name}.sh"
@@ -140,31 +141,31 @@ detect_runner() {
             fi
         fi
     done
-    
+
     error "No agent runner detected. Install Claude Code CLI or Codex CLI, or specify a runner with -r."
 }
 
 # ─── Init Command ───
 cmd_init() {
     local project_dir="$1"
-    
+
     if [[ -z "$project_dir" ]]; then
         error "Project directory required. Usage: stageforge init <project-dir>"
     fi
-    
+
     mkdir -p "$project_dir"/{docs,stages,src}
-    
+
     # Copy default config if not exists
     if [[ ! -f "$project_dir/stageforge.yaml" ]]; then
         cp "$PROJECT_ROOT/config/stageforge.yaml" "$project_dir/stageforge.yaml"
     fi
-    
+
     # Write .gitignore
     cat > "$project_dir/.gitignore" <<'EOF'
 stages/.stage_*
 stages/.pipeline_*
 EOF
-    
+
     ok "Project initialized: $project_dir"
     info "Next: stageforge run $project_dir -t \"your task description\""
 }
@@ -172,22 +173,22 @@ EOF
 # ─── Status Command ───
 cmd_status() {
     local project_dir="$1"
-    
+
     if [[ ! -d "$project_dir" ]]; then
         error "Project directory not found: $project_dir"
     fi
-    
+
     echo -e "${BOLD}Project:${NC} $project_dir"
     echo ""
-    
+
     local stages=("0:Planner" "1:Builder" "2:Reviewer" "3:Consultant")
     local all_done=true
-    
+
     for stage_def in "${stages[@]}"; do
         local num="${stage_def%%:*}"
         local name="${stage_def##*:}"
         local signal="$project_dir/stages/.stage_${num}_done"
-        
+
         if [[ -f "$signal" ]]; then
             local ts
             ts=$(cat "$signal" | head -1)
@@ -197,7 +198,7 @@ cmd_status() {
             all_done=false
         fi
     done
-    
+
     echo ""
     if [[ -f "$project_dir/stages/.pipeline_done" ]]; then
         ok "Pipeline: COMPLETE"
@@ -218,7 +219,7 @@ cmd_status() {
 cmd_resume() {
     local project_dir="$1"
     local task="${TASK:-resume from last completed stage}"
-    
+
     # Find last completed stage
     local last_complete=-1
     for i in 0 1 2 3; do
@@ -226,7 +227,7 @@ cmd_resume() {
             last_complete=$i
         fi
     done
-    
+
     if [[ $last_complete -eq -1 ]]; then
         info "No completed stages found. Starting from Stage 0."
         cmd_run "$project_dir"
@@ -371,7 +372,7 @@ run_pipeline() {
 
     # Pipeline complete — record the run that produced it.
     {
-        echo "$(date -Iseconds)"
+        echo "$(date_iso)"
         echo "run_id: $run_id"
     } > "$project_dir/stages/.pipeline_done"
     echo ""
@@ -382,21 +383,21 @@ run_pipeline() {
 # ─── Run Command ───
 cmd_run() {
     local project_dir="$1"
-    
+
     if [[ -z "$project_dir" ]]; then
         error "Project directory required. Usage: stageforge run <project-dir> -t <task>"
     fi
     if [[ -z "$TASK" ]]; then
         error "Task description required. Use -t or --task."
     fi
-    
+
     run_pipeline "$project_dir" "$TASK" 0
 }
 
 # ─── Iterate Command ───
 cmd_iterate() {
     local project_dir="$1"
-    
+
     if [[ -z "$project_dir" ]]; then
         error "Project directory required. Usage: stageforge iterate <project-dir> -t <task>"
     fi
@@ -406,10 +407,10 @@ cmd_iterate() {
     if [[ ! -d "$project_dir/src" ]] && [[ ! -d "$project_dir/contracts" ]] && [[ ! -d "$project_dir/lib" ]]; then
         error "No source code found. Use 'run' for new projects."
     fi
-    
+
     # Brownfield: set environment variable for prompts
     export STAGEFORGE_MODE="brownfield"
-    
+
     run_pipeline "$project_dir" "$TASK" 0
 }
 
@@ -418,24 +419,24 @@ cmd_quick() {
     if [[ -z "$TASK" ]]; then
         error "Task description required. Use -t or --task."
     fi
-    
+
     # Create temp project dir
     local project_dir
     project_dir=$(mktemp -d -t stageforge-quick-XXXXXX)
     mkdir -p "$project_dir"/{docs,stages,src}
-    
+
     load_config "$project_dir"
     local runner_path
     runner_path=$(detect_runner)
     source "$runner_path"
-    
+
     info "Runner: $(runner_name)"
     info "Quick track: $TASK"
-    
+
     stage "⚡" "Quick Build"
     local builder_prompt
     builder_prompt=$(cat "$PROJECT_ROOT/prompts/builder.md")
-    
+
     if runner_run "builder" "$builder_prompt\n\n## Task (Quick Track)\n$TASK\n\n## Project Directory\n$project_dir\n\n## Instructions\nBuild and verify the solution. This is a quick-track task - keep it simple and focused." "$project_dir" "${BUILDER_MODEL:-}"; then
         ok "Quick track complete! 🎉"
         info "Output: $project_dir"

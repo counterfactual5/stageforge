@@ -46,7 +46,7 @@ signal_complete() {
 
     local signal_file="$project_dir/stages/.stage_${stage_num}_done"
     local timestamp
-    timestamp=$(date -Iseconds)
+    timestamp=$(date_iso)
     local run_id
     run_id="${STAGEFORGE_RUN_ID:-$(signal_current_run_id "$project_dir")}"
 
@@ -70,7 +70,7 @@ signal_fail() {
 
     local signal_file="$project_dir/stages/.stage_${stage_num}_failed"
     local timestamp
-    timestamp=$(date -Iseconds)
+    timestamp=$(date_iso)
     local run_id
     run_id="${STAGEFORGE_RUN_ID:-$(signal_current_run_id "$project_dir")}"
 
