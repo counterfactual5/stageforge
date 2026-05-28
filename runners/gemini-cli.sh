@@ -33,7 +33,7 @@ runner_run() {
     
     # Write prompt to temp file to avoid shell escaping issues
     local prompt_file
-    prompt_file=$(mktemp /tmp/stageforge-prompt-XXXXXX.md)
+    prompt_file=$(temp_file)
     echo "$prompt" > "$prompt_file"
     
     (

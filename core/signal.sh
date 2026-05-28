@@ -13,7 +13,7 @@ signal_complete() {
     
     local signal_file="$project_dir/stages/.stage_${stage_num}_done"
     local timestamp
-    timestamp=$(date -Iseconds)
+    timestamp=$(date_iso)
     
     {
         echo "$timestamp"
@@ -44,7 +44,7 @@ signal_fail() {
     
     local signal_file="$project_dir/stages/.stage_${stage_num}_failed"
     local timestamp
-    timestamp=$(date -Iseconds)
+    timestamp=$(date_iso)
     
     {
         echo "$timestamp"
