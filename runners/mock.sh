@@ -55,7 +55,7 @@ task-cli/
 - CLI via argparse
 PLAN
             {
-                date -Iseconds
+                date_iso
                 _mock_run_id_line
             } > "$workdir/stages/.stage_0_done"
             echo "[mock] Stage 0 (Planner) done."
@@ -249,7 +249,7 @@ DEPS
             cd "$workdir" && python3 -m pytest tests/ -v 2>&1 || python3 tests/test_main.py 2>&1 || true
             
             {
-                date -Iseconds
+                date_iso
                 _mock_run_id_line
                 echo "Files: src/main.py, tests/test_main.py, requirements.txt"
             } > "$workdir/stages/.stage_1_done"
@@ -261,7 +261,7 @@ DEPS
             cat > "$workdir/docs/TEST_REPORT.md" <<'REPORT'
 # Test Report
 
-**Date**: $(date -Iseconds)
+**Date**: $(date_iso)
 **Reviewer**: stageforge-mock
 
 ## Checklist
@@ -285,7 +285,7 @@ Code quality is good. All tests pass. No security issues detected.
 REPORT
             
             {
-                date -Iseconds
+                date_iso
                 _mock_run_id_line
                 echo "Issues found: 0"
                 echo "Issues fixed: 0"
@@ -323,7 +323,7 @@ python3 src/main.py delete 2
 README
             
             {
-                date -Iseconds
+                date_iso
                 _mock_run_id_line
                 echo "README: ok"
                 echo "TestReport: ok"
