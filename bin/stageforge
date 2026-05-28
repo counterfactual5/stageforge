@@ -315,6 +315,10 @@ run_pipeline() {
     local run_id
     run_id=$(signal_init_run "$project_dir")
     export STAGEFORGE_RUN_ID="$run_id"
+    export STAGEFORGE_RUN_ID="$(signal_current_run_id "$project_dir")"
+    if [ -f "$HOME/.stageforge/policy.yaml" ]; then
+        export POLICY_FILE="$HOME/.stageforge/policy.yaml"
+    fi
 
     info "Runner: $(runner_name)"
     info "Project: $project_dir"
