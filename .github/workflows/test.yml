@@ -1,0 +1,32 @@
+name: Lint
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: "."
+
+      - name: Syntax check
+        run: |
+          for f in bin/stageforge core/*.sh runners/*.sh; do
+            echo "Checking $f ..."
+            bash -n "$f"
+          done
+
+      - name: CLI smoke test
+        run: |
+          export PATH="$PWD/bin:$PATH"
+          stageforge --version
+          stageforge --help | grep -q "Usage" && echo "OK: help works"

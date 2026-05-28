@@ -1,6 +1,6 @@
 {
   "name": "stageforge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Agent-agnostic multi-stage autonomous development framework. Plan → Build → Review → Deliver, with any AI coding agent.",
   "author": "counterfactual5",
   "license": "MIT",
