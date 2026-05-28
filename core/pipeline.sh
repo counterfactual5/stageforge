@@ -6,6 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/compat.sh"
 
 source "$SCRIPT_DIR/signal.sh"
 source "$SCRIPT_DIR/validate.sh"
@@ -150,7 +151,7 @@ run_full_pipeline() {
     fi
     
     # Mark pipeline complete
-    echo "$(date -Iseconds)" > "$project_dir/stages/.pipeline_done"
+    echo "$(date_iso)" > "$project_dir/stages/.pipeline_done"
     echo ""
     echo "[PIPELINE] ✅ All stages complete!"
     echo "[PIPELINE] Review deliverables in: $project_dir/docs/"
