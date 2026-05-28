@@ -31,7 +31,7 @@ run_stage() {
     local success=false
     
     while [[ $attempt -le $MAX_RETRIES ]]; do
-        echo "[PIPELINE] Stage $stage_num ($stage_name) — attempt $attempt/$MAX_RETRIES"
+        echo "[PIPELINE] Stage $stage_num ($stage_name) — attempt $attempt/$MAX_RETRIES (run_id=${STAGEFORGE_RUN_ID:-unset})"
         
         # Validate prerequisites
         if ! validate_prerequisites "$stage_num" "$project_dir"; then
@@ -41,11 +41,16 @@ run_stage() {
         
         # Run the stage
         if runner_run "$stage_name" "$prompt" "$project_dir" "$model" "$mode"; then
-            # Verify signal file was created
-            if signal_check "$stage_num" "$project_dir"; then
+            # Verify signal file matches the current run-ID (rejects stale signals).
+            if signal_verify "$stage_num" "$project_dir" "${STAGEFORGE_RUN_ID:-}"; then
                 echo "[PIPELINE] Stage $stage_num ($stage_name) — SUCCESS"
                 success=true
                 break
+            elif signal_check "$stage_num" "$project_dir"; then
+                local stale
+                stale=$(signal_read_run_id "$stage_num" "$project_dir" || true)
+                echo "[PIPELINE] Stage $stage_num signal found but run_id mismatch (expected=${STAGEFORGE_RUN_ID:-unset}, got=${stale:-<missing>}). Treating as stale and retrying..."
+                rm -f "$project_dir/stages/.stage_${stage_num}_done"
             else
                 echo "[PIPELINE] Stage $stage_num ran but no signal file created. Retrying..."
             fi
@@ -89,9 +94,17 @@ run_full_pipeline() {
     consultant_model="${SF_CONSULTANT_MODEL:-}"
     FALLBACK_MODEL="${SF_FALLBACK_MODEL:-}"
     
+    # Clean stale signal files from start_stage onwards, then issue a fresh run-ID.
+    signal_clean_from "$project_dir" "$start_stage"
+    if [[ -z "${STAGEFORGE_RUN_ID:-}" ]]; then
+        STAGEFORGE_RUN_ID=$(signal_init_run "$project_dir")
+        export STAGEFORGE_RUN_ID
+    fi
+
     echo "[PIPELINE] Starting pipeline: mode=$mode, start_stage=$start_stage"
     echo "[PIPELINE] Project: $project_dir"
     echo "[PIPELINE] Task: $task"
+    echo "[PIPELINE] Run ID: $STAGEFORGE_RUN_ID"
     
     # Stage 0: Planner
     if [[ $start_stage -le 0 ]]; then
@@ -149,8 +162,11 @@ run_full_pipeline() {
         fi
     fi
     
-    # Mark pipeline complete
-    echo "$(date -Iseconds)" > "$project_dir/stages/.pipeline_done"
+    # Mark pipeline complete (record the run that produced it).
+    {
+        date -Iseconds
+        echo "run_id: $STAGEFORGE_RUN_ID"
+    } > "$project_dir/stages/.pipeline_done"
     echo ""
     echo "[PIPELINE] ✅ All stages complete!"
     echo "[PIPELINE] Review deliverables in: $project_dir/docs/"

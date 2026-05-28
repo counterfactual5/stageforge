@@ -43,10 +43,17 @@ You are a developer (Builder). Your task is to implement the solution described 
 
 ## Completion
 
-After all files are created and verification passes:
+After all files are created and verification passes, write the signal file
+embedding the Run ID provided by the orchestrator (also exported as
+`$STAGEFORGE_RUN_ID`). The orchestrator treats the stage as failed if the id
+does not match.
+
 ```bash
-echo "$(date -Iseconds)
-Files: $(find . -name '*.py' -o -name '*.js' -o -name '*.ts' -o -name '*.sol' -o -name '*.rs' -o -name '*.go' | head -30 | tr '\n' ',')" > stages/.stage_1_done
+{
+  echo "$(date -Iseconds)"
+  echo "run_id: ${STAGEFORGE_RUN_ID:?STAGEFORGE_RUN_ID must be set by orchestrator}"
+  echo "Files: $(find . -name '*.py' -o -name '*.js' -o -name '*.ts' -o -name '*.sol' -o -name '*.rs' -o -name '*.go' | head -30 | tr '\n' ',')"
+} > stages/.stage_1_done
 ```
 
 Do NOT send any messages to the user. Your only deliverable is the files you write.

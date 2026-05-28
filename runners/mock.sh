@@ -5,12 +5,22 @@
 runner_name()  { echo "mock"; }
 runner_check() { true; }
 
+# Resolve the mock's "run_id line" to whatever the orchestrator set, so the
+# signal-verification step in bin/stageforge accepts the mock's signal files.
+_mock_run_id_line() {
+    echo "run_id: ${STAGEFORGE_RUN_ID:-mock-run}"
+}
+
 runner_run() {
     local stage="$1"
     local prompt="$2"
     local workdir="$3"
     local model="${4:-}"
-    
+
+    # Normalize to absolute path so later `cd "$workdir"` calls do not break
+    # subsequent file writes that use "$workdir/..." as a relative path.
+    workdir="$(cd "$workdir" && pwd)"
+
     echo "[mock] Simulating stage: $stage in $workdir"
     
     case "$stage" in
@@ -44,7 +54,10 @@ task-cli/
 - Use SQLite via stdlib sqlite3
 - CLI via argparse
 PLAN
-            echo "$(date -Iseconds)" > "$workdir/stages/.stage_0_done"
+            {
+                date -Iseconds
+                _mock_run_id_line
+            } > "$workdir/stages/.stage_0_done"
             echo "[mock] Stage 0 (Planner) done."
             ;;
             
@@ -235,8 +248,11 @@ DEPS
             # Run tests
             cd "$workdir" && python3 -m pytest tests/ -v 2>&1 || python3 tests/test_main.py 2>&1 || true
             
-            echo "$(date -Iseconds)
-Files: src/main.py, tests/test_main.py, requirements.txt" > "$workdir/stages/.stage_1_done"
+            {
+                date -Iseconds
+                _mock_run_id_line
+                echo "Files: src/main.py, tests/test_main.py, requirements.txt"
+            } > "$workdir/stages/.stage_1_done"
             echo "[mock] Stage 1 (Builder) done."
             ;;
             
@@ -268,9 +284,12 @@ None.
 Code quality is good. All tests pass. No security issues detected.
 REPORT
             
-            echo "$(date -Iseconds)
-Issues found: 0
-Issues fixed: 0" > "$workdir/stages/.stage_2_done"
+            {
+                date -Iseconds
+                _mock_run_id_line
+                echo "Issues found: 0"
+                echo "Issues fixed: 0"
+            } > "$workdir/stages/.stage_2_done"
             echo "[mock] Stage 2 (Reviewer) done."
             ;;
             
@@ -303,9 +322,12 @@ python3 src/main.py delete 2
 ```
 README
             
-            echo "$(date -Iseconds)
-README: ok
-TestReport: ok" > "$workdir/stages/.stage_3_done"
+            {
+                date -Iseconds
+                _mock_run_id_line
+                echo "README: ok"
+                echo "TestReport: ok"
+            } > "$workdir/stages/.stage_3_done"
             echo "[mock] Stage 3 (Consultant) done."
             ;;
     esac

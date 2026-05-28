@@ -25,6 +25,13 @@ DRY_RUN=false
 FAST_TRACK=false
 ITERATE=false
 CONFIG_FILE=""
+STAGE_MAX_RETRIES="${STAGEFORGE_MAX_RETRIES:-3}"
+
+# ─── Shared modules ───
+# shellcheck source=../core/signal.sh
+source "$PROJECT_ROOT/core/signal.sh"
+# shellcheck source=../core/validate.sh
+source "$PROJECT_ROOT/core/validate.sh"
 
 # ─── Help ───
 usage() {
@@ -199,6 +206,12 @@ cmd_status() {
     else
         info "Pipeline: in progress"
     fi
+
+    local cur_run_id
+    cur_run_id=$(signal_current_run_id "$project_dir")
+    if [[ -n "$cur_run_id" ]]; then
+        info "Current run_id: $cur_run_id"
+    fi
 }
 
 # ─── Resume Command ───
@@ -227,86 +240,140 @@ cmd_resume() {
     fi
 }
 
+# ─── Stage Execution Helper ───
+# Runs a single stage with prerequisite validation, signal verification, and retries.
+# Usage: run_stage_with_verify <stage_num> <stage_name> <prompt_text> <model>
+run_stage_with_verify() {
+    local stage_num="$1"
+    local stage_name="$2"
+    local prompt_text="$3"
+    local model="${4:-}"
+
+    if ! validate_prerequisites "$stage_num" "$project_dir"; then
+        if [[ "$stage_num" == "0" ]]; then
+            : # Planner only needs the project dir; warning already printed.
+        else
+            error "Stage $stage_num ($stage_name) prerequisites not met."
+        fi
+    fi
+
+    local attempt=1
+    while [[ $attempt -le $STAGE_MAX_RETRIES ]]; do
+        info "Stage $stage_num ($stage_name) — attempt $attempt/$STAGE_MAX_RETRIES (run_id=$STAGEFORGE_RUN_ID)"
+
+        if runner_run "$stage_name" "$prompt_text" "$project_dir" "$model"; then
+            if signal_verify "$stage_num" "$project_dir" "$STAGEFORGE_RUN_ID"; then
+                ok "Stage $stage_num ($stage_name) verified."
+                return 0
+            fi
+
+            # Distinguish between "no file" and "stale file from previous run".
+            if signal_check "$stage_num" "$project_dir"; then
+                local stale
+                stale=$(signal_read_run_id "$stage_num" "$project_dir" || true)
+                warn "Stage $stage_num signal found but run_id mismatch (expected=$STAGEFORGE_RUN_ID, got=${stale:-<missing>}). Treating as stale."
+                rm -f "$project_dir/stages/.stage_${stage_num}_done"
+            else
+                warn "Stage $stage_num ran but did not write signal file."
+            fi
+        else
+            warn "Stage $stage_num ($stage_name) runner returned non-zero (attempt $attempt)."
+        fi
+
+        attempt=$((attempt + 1))
+    done
+
+    signal_fail "$stage_num" "$project_dir" "Failed after $STAGE_MAX_RETRIES attempts"
+    error "Stage $stage_num ($stage_name) failed after $STAGE_MAX_RETRIES attempts."
+}
+
 # ─── Run Pipeline ───
 run_pipeline() {
     local project_dir="$1"
     local task="$2"
     local start_stage="${3:-0}"
-    
+
+    # Normalize to an absolute path so runners that `cd` internally cannot
+    # corrupt subsequent retries (or downstream relative path resolution).
+    if [[ ! -d "$project_dir" ]]; then
+        error "Project directory not found: $project_dir"
+    fi
+    project_dir="$(cd "$project_dir" && pwd)"
+
     load_config "$project_dir"
     local runner_path
     runner_path=$(detect_runner)
     source "$runner_path"
-    
+
+    # Wipe any stale signal files from start_stage onwards so old runs cannot
+    # falsely satisfy validate_prerequisites for the new run.
+    signal_clean_from "$project_dir" "$start_stage"
+
+    # Allocate a fresh run-ID for this invocation and export it so that runners
+    # / AI subprocesses can embed it into the signal files they write.
+    local run_id
+    run_id=$(signal_init_run "$project_dir")
+    export STAGEFORGE_RUN_ID="$run_id"
+
     info "Runner: $(runner_name)"
     info "Project: $project_dir"
     info "Task: $task"
     info "Start stage: $start_stage"
-    
+    info "Run ID: $run_id"
+
+    local run_id_block="## Run ID\nWrite this exact id into stages/.stage_<N>_done as the second line in the form 'run_id: <id>'. The same value is exported as the STAGEFORGE_RUN_ID environment variable.\n$run_id"
+
     # Stage 0: Planner
     if [[ $start_stage -le 0 ]]; then
         stage "0" "Planner"
-        source "$PROJECT_ROOT/core/validate.sh"
-        validate_prerequisites "0" "$project_dir" || true
-        
         local planner_prompt
         planner_prompt=$(cat "$PROJECT_ROOT/prompts/planner.md")
-        
-        if ! runner_run "planner" "$planner_prompt\n\n## Task\n$task\n\n## Project Directory\n$project_dir" "$project_dir" "${PLANNER_MODEL:-}"; then
-            error "Stage 0 (Planner) failed after retries."
-        fi
-        
+        run_stage_with_verify "0" "planner" \
+            "$planner_prompt\n\n$run_id_block\n\n## Task\n$task\n\n## Project Directory\n$project_dir" \
+            "${PLANNER_MODEL:-}"
+
         if [[ "$DRY_RUN" == true ]]; then
             ok "Dry run complete. Review: $project_dir/docs/PLAN.md"
             ok "Remove --dry-run to continue the pipeline."
             exit 0
         fi
     fi
-    
+
     # Stage 1: Builder
     if [[ $start_stage -le 1 ]]; then
         stage "1" "Builder"
-        source "$PROJECT_ROOT/core/validate.sh"
-        validate_prerequisites "1" "$project_dir"
-        
         local builder_prompt
         builder_prompt=$(cat "$PROJECT_ROOT/prompts/builder.md")
-        
-        if ! runner_run "builder" "$builder_prompt\n\n## Plan Location\n$project_dir/docs/PLAN.md\n\n## Project Directory\n$project_dir" "$project_dir" "${BUILDER_MODEL:-}"; then
-            error "Stage 1 (Builder) failed after retries."
-        fi
+        run_stage_with_verify "1" "builder" \
+            "$builder_prompt\n\n$run_id_block\n\n## Plan Location\n$project_dir/docs/PLAN.md\n\n## Project Directory\n$project_dir" \
+            "${BUILDER_MODEL:-}"
     fi
-    
+
     # Stage 2: Reviewer
     if [[ $start_stage -le 2 ]]; then
         stage "2" "Reviewer"
-        source "$PROJECT_ROOT/core/validate.sh"
-        validate_prerequisites "2" "$project_dir"
-        
         local reviewer_prompt
         reviewer_prompt=$(cat "$PROJECT_ROOT/prompts/reviewer.md")
-        
-        if ! runner_run "reviewer" "$reviewer_prompt\n\n## Project Directory\n$project_dir" "$project_dir" "${REVIEWER_MODEL:-}"; then
-            error "Stage 2 (Reviewer) failed after retries."
-        fi
+        run_stage_with_verify "2" "reviewer" \
+            "$reviewer_prompt\n\n$run_id_block\n\n## Project Directory\n$project_dir" \
+            "${REVIEWER_MODEL:-}"
     fi
-    
+
     # Stage 3: Consultant
     if [[ $start_stage -le 3 ]]; then
         stage "3" "Consultant"
-        source "$PROJECT_ROOT/core/validate.sh"
-        validate_prerequisites "3" "$project_dir"
-        
         local consultant_prompt
         consultant_prompt=$(cat "$PROJECT_ROOT/prompts/consultant.md")
-        
-        if ! runner_run "consultant" "$consultant_prompt\n\n## Project Directory\n$project_dir" "$project_dir" "${CONSULTANT_MODEL:-}"; then
-            error "Stage 3 (Consultant) failed after retries."
-        fi
+        run_stage_with_verify "3" "consultant" \
+            "$consultant_prompt\n\n$run_id_block\n\n## Project Directory\n$project_dir" \
+            "${CONSULTANT_MODEL:-}"
     fi
-    
-    # Pipeline complete
-    echo "$(date -Iseconds)" > "$project_dir/stages/.pipeline_done"
+
+    # Pipeline complete — record the run that produced it.
+    {
+        echo "$(date -Iseconds)"
+        echo "run_id: $run_id"
+    } > "$project_dir/stages/.pipeline_done"
     echo ""
     ok "Pipeline complete! 🎉"
     cmd_status "$project_dir"

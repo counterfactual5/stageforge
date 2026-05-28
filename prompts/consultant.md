@@ -66,11 +66,17 @@ Output this exact format:
 
 ## Completion
 
-After all deliverables are produced:
+After all deliverables are produced, write the signal file embedding the Run ID
+provided by the orchestrator (also exported as `$STAGEFORGE_RUN_ID`). The
+orchestrator treats the stage as failed if the id does not match.
+
 ```bash
-echo "$(date -Iseconds)
-README: $(test -f docs/README.md && echo 'ok' || echo 'MISSING')
-TestReport: $(test -f docs/TEST_REPORT.md && echo 'ok' || echo 'MISSING')" > stages/.stage_3_done
+{
+  echo "$(date -Iseconds)"
+  echo "run_id: ${STAGEFORGE_RUN_ID:?STAGEFORGE_RUN_ID must be set by orchestrator}"
+  echo "README: $(test -f docs/README.md && echo 'ok' || echo 'MISSING')"
+  echo "TestReport: $(test -f docs/TEST_REPORT.md && echo 'ok' || echo 'MISSING')"
+} > stages/.stage_3_done
 ```
 
 This is the final stage. Your delivery report IS the user notification — no additional messages needed.
