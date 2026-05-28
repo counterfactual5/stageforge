@@ -61,6 +61,7 @@ stageforge quick -t "Write a Python script to batch rename files"
 - At least one supported agent CLI:
   - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`)
   - [OpenAI Codex CLI](https://github.com/openai/codex) (`codex`)
+  - [Gemini CLI](https://github.com/google-gemini/gemini-cli) (`gemini`)
   - Or any custom agent (see below)
 
 ## Usage

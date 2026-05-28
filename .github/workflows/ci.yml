@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Shellcheck
+        run: shellcheck bin/stageforge core/*.sh runners/*.sh
+
+      - name: Bash syntax check
+        run: |
+          for f in bin/stageforge core/*.sh runners/*.sh; do
+            echo "Checking $f..."
+            bash -n "$f"
+          done
+
+      - name: Validate plugin.json
+        run: python3 -c "import json; json.load(open('plugin.json')); print('plugin.json: valid')"
+
+      - name: Mock runner e2e test
+        run: |
+          export PATH="$PWD/bin:$PATH"
+          stageforge init /tmp/e2e-test
+          stageforge run /tmp/e2e-test -t "Build a task CLI" -r mock
+          stageforge status /tmp/e2e-test
+          test -f /tmp/e2e-test/stages/.pipeline_done
+          echo "E2E test passed!"
