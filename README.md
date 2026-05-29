@@ -129,18 +129,20 @@ stageforge run my-app -t "..." -m o3
 stageforge run my-app -t "..." --planner-model sonnet --builder-model sonnet --reviewer-model o3
 ```
 
-### Trading autopilot integration
+### Optional local pipeline hooks
 
-Each `stageforge run` allocates a **run ID** and exports it for downstream trading CLIs
-(`evm-wallet-scanner`, `uniswap-autopilot`, `hyperliquid-autopilot`, `polymarket-autopilot`):
+`stageforge run` exports environment variables that **compatible CLIs may read**
+when you wire them into a local pipeline. StageForge itself does not depend on
+any trading repository — cloning and CI for this repo are fully standalone.
 
 | Variable | Set when |
 |----------|----------|
-| `STAGEFORGE_RUN_ID` | Always — ties signal files, state machine checkpoints, and audit JSONL |
+| `STAGEFORGE_RUN_ID` | Always — a unique id per pipeline run |
 | `POLICY_FILE` | When `~/.stageforge/policy.yaml`, `policy.yml`, or `policy.json` exists |
 
-Copy `policy.yaml` from any autopilot repo to `~/.stageforge/` before running trades in a pipeline.
-See [evm-wallet-scanner/RISK_POLICY.md](https://github.com/counterfactual5/evm-wallet-scanner/blob/master/RISK_POLICY.md) for rule reference and drill checklist.
+Trading CLIs that support these variables use them for audit correlation and
+risk-policy lookup. Place a `policy.yaml` in `~/.stageforge/` if you run trades
+locally after a pipeline stage; see that CLI's own `RISK_POLICY.md`.
 
 ## Configuration
 
