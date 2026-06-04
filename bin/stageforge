@@ -220,16 +220,25 @@ cmd_resume() {
     local project_dir="$1"
     local task="${TASK:-resume from last completed stage}"
 
-    # Find last completed stage
-    local last_complete=-1
+    # Find last *recorded* completed stage (signal existence only).
+    local signalled_last=-1
     for i in 0 1 2 3; do
         if [[ -f "$project_dir/stages/.stage_${i}_done" ]]; then
-            last_complete=$i
+            signalled_last=$i
         fi
     done
 
+    # Reconcile against artifacts on disk: a stage may be marked done while its
+    # outputs are gone. Resume from the last artifact-backed stage instead.
+    local last_complete
+    last_complete=$(reconcile_resume_point "$project_dir")
+
+    if [[ $last_complete -lt $signalled_last ]]; then
+        warn "Recorded progress (Stage $signalled_last) is ahead of intact artifacts (Stage $last_complete). Re-running from Stage $((last_complete + 1))."
+    fi
+
     if [[ $last_complete -eq -1 ]]; then
-        info "No completed stages found. Starting from Stage 0."
+        info "No artifact-backed completed stages found. Starting from Stage 0."
         cmd_run "$project_dir"
     elif [[ $last_complete -eq 3 ]]; then
         ok "Pipeline already complete."

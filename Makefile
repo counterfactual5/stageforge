@@ -24,6 +24,8 @@ test:
 	@bash -n core/validate.sh && echo "core/validate.sh: syntax OK"
 	@bash -n runners/claude-code.sh && echo "runners/claude-code.sh: syntax OK"
 	@bash -n runners/codex-cli.sh && echo "runners/codex-cli.sh: syntax OK"
+	@echo "Running unit tests..."
+	@bash tests/test_reconcile.sh
 
 clean:
 	@rm -rf stages/ .stage_* docs/PLAN.md docs/TEST_REPORT.md docs/README.md
