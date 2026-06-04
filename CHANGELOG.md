@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1] — 2026-06-05
+
+### Added
+- **Resume reconciliation**: `reconcile_resume_point()` rewinds past stages marked
+  done whose artifacts are missing (PLAN.md, src/, etc.); `cmd_resume` warns when
+  recorded progress is ahead of intact outputs.
+- Unit tests in `tests/test_reconcile.sh` (7 cases), wired into `make test`.
+
 ## [0.4.0] — 2026-05-28
 
 ### Fixed
