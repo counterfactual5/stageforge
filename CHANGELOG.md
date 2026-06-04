@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.4.1] — 2026-06-05
+## [0.5.0] — 2026-06-05
 
 ### Added
 - **Resume reconciliation**: `reconcile_resume_point()` rewinds past stages marked
