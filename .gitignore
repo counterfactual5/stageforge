@@ -1,2 +1,4 @@
 stages/.stage_*
 stages/.pipeline_*
+.github/workflows/
+.pytest_cache/
