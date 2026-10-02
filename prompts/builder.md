@@ -50,7 +50,7 @@ does not match.
 
 ```bash
 {
-  echo "$(date -Iseconds)"
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "run_id: ${STAGEFORGE_RUN_ID:?STAGEFORGE_RUN_ID must be set by orchestrator}"
   echo "Files: $(find . -name '*.py' -o -name '*.js' -o -name '*.ts' -o -name '*.sol' -o -name '*.rs' -o -name '*.go' | head -30 | tr '\n' ',')"
 } > stages/.stage_1_done

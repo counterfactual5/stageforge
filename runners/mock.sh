@@ -258,7 +258,10 @@ DEPS
             
         reviewer)
             mkdir -p "$workdir/docs"
-            cat > "$workdir/docs/TEST_REPORT.md" <<'REPORT'
+            # Unquoted heredoc: the rest of the template contains no `$` or
+            # backticks, so only $(date_iso) expands. With 'REPORT' quoted it
+            # used to write the literal string "$(date_iso)" into the file.
+            cat > "$workdir/docs/TEST_REPORT.md" <<REPORT
 # Test Report
 
 **Date**: $(date_iso)

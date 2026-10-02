@@ -17,14 +17,17 @@ No dependencies beyond Bash 4+.
 
 ```
 stageforge/
-├── bin/stageforge         # CLI entry point
+├── bin/stageforge         # CLI entry point (orchestration lives here)
 ├── core/
-│   ├── pipeline.sh        # Stage orchestration
-│   ├── signal.sh          # File-based stage signals
-│   └── validate.sh        # Prerequisite checks
+│   ├── signal.sh          # File-based stage signals + run-ID protocol
+│   ├── validate.sh        # Prerequisite checks + resume reconciliation
+│   ├── lock.sh            # Per-project run lock
+│   └── compat.sh          # Cross-platform shell helpers
 ├── runners/               # Agent runners (plugin system)
 │   ├── claude-code.sh     # Claude Code adapter
-│   └── codex-cli.sh       # OpenAI Codex adapter
+│   ├── codex-cli.sh       # OpenAI Codex adapter
+│   ├── gemini-cli.sh      # Gemini CLI adapter
+│   └── mock.sh            # Offline runner for tests
 ├── prompts/               # Per-stage system prompts
 ├── templates/             # Project scaffolding
 ├── examples/              # Usage examples

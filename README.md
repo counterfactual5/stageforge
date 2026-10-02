@@ -31,7 +31,7 @@ Each stage produces **verifiable artifacts** and a **signal file** for the next 
 - 🔌 **Agent-agnostic** — Works with Claude Code, Codex CLI, Gemini CLI, or any agent you configure
 - 🔄 **Dual-path** — Greenfield (new projects) and Brownfield (iterate on existing code)
 - ⚡ **Quick Track** — Simple tasks skip the full pipeline
-- 🛡️ **Built-in retry + fallback** — Each stage retries 3x with model fallback
+- 🛡️ **Built-in retry** — Each stage retries up to `max_retries` times; a failed stage stops the pipeline with a failure signal
 - 📋 **Signal protocol** — File-based stage coordination, no external dependencies
 - 🎯 **Model routing** — Different models for different stages via config
 
@@ -159,10 +159,7 @@ models:
   reviewer: ""
   consultant: ""
 
-# Fallback model on repeated failure
-fallback: ""
-
-# Retry count per stage
+# Retry count per stage (env STAGEFORGE_MAX_RETRIES takes precedence)
 max_retries: 3
 ```
 
@@ -227,7 +224,7 @@ Each stage:
 1. **Validates** prerequisites from previous stages
 2. **Runs** the agent with a specialized system prompt
 3. **Creates** a signal file upon completion
-4. **Fails gracefully** with retries and model fallback
+4. **Fails gracefully** — retries up to `max_retries` times, then stops with a failure signal
 
 ## Comparison
 
@@ -238,7 +235,7 @@ Each stage:
 | Path modes | Single | Greenfield + Brownfield |
 | Model routing | None | Per-stage config |
 | Simple tasks | Full pipeline | Quick Track auto-skip |
-| Retry/fallback | Basic | 3x retry + model fallback |
+| Retry | Basic | Configurable per-stage retry count |
 | Resume | No | Yes (from any stage) |
 | Extensible | Low | Custom runners + prompts |
 

@@ -9,5 +9,4 @@ models:
   reviewer: ""
   consultant: ""
 
-fallback: ""
 max_retries: 3

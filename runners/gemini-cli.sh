@@ -22,9 +22,11 @@ runner_run() {
         return 1
     fi
     
-    local model_flag=""
+    # Keep CLI args verbatim even for values with spaces/globs (see
+    # claude-code.sh for rationale); guard empty array for bash 3.2 + set -u.
+    local model_args=()
     if [[ -n "$model" ]]; then
-        model_flag="--model $model"
+        model_args=(--model "$model")
     fi
     
     echo "[gemini-cli] Running stage: $stage"
@@ -39,7 +41,7 @@ runner_run() {
     (
         cd "$workdir"
         gemini -p "$(cat "$prompt_file")" \
-            $model_flag \
+            ${model_args[@]+"${model_args[@]}"} \
             --sandbox=false \
             2>&1
     )

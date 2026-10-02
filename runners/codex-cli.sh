@@ -26,9 +26,11 @@ runner_run() {
         return 1
     fi
     
-    local model_flag=""
+    # Keep CLI args verbatim even for values with spaces/globs (see
+    # claude-code.sh for rationale); guard empty array for bash 3.2 + set -u.
+    local model_args=()
     if [[ -n "$model" ]]; then
-        model_flag="--model $model"
+        model_args=(--model "$model")
     fi
     
     # Codex CLI full-auto mode
@@ -48,7 +50,7 @@ runner_run() {
     
     (
         cd "$workdir"
-        codex $model_flag \
+        codex ${model_args[@]+"${model_args[@]}"} \
             --approval-mode "$approval_mode" \
             --quiet \
             "Read and follow ALL instructions in this file: $prompt_file\n\nStage: $stage\nProject directory: $workdir"

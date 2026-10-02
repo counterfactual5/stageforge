@@ -19,13 +19,21 @@ test:
 	@echo "Running shellcheck..."
 	@shellcheck bin/stageforge core/*.sh runners/*.sh 2>/dev/null || echo "shellcheck not installed, skipping"
 	@bash -n bin/stageforge && echo "bin/stageforge: syntax OK"
-	@bash -n core/pipeline.sh && echo "core/pipeline.sh: syntax OK"
+	@bash -n core/compat.sh && echo "core/compat.sh: syntax OK"
+	@bash -n core/lock.sh && echo "core/lock.sh: syntax OK"
 	@bash -n core/signal.sh && echo "core/signal.sh: syntax OK"
 	@bash -n core/validate.sh && echo "core/validate.sh: syntax OK"
 	@bash -n runners/claude-code.sh && echo "runners/claude-code.sh: syntax OK"
 	@bash -n runners/codex-cli.sh && echo "runners/codex-cli.sh: syntax OK"
+	@bash -n runners/gemini-cli.sh && echo "runners/gemini-cli.sh: syntax OK"
+	@bash -n runners/mock.sh && echo "runners/mock.sh: syntax OK"
+	@bash -n tests/test_reconcile.sh && echo "tests/test_reconcile.sh: syntax OK"
+	@bash -n tests/test_lock.sh && echo "tests/test_lock.sh: syntax OK"
+	@bash -n tests/test_config.sh && echo "tests/test_config.sh: syntax OK"
 	@echo "Running unit tests..."
 	@bash tests/test_reconcile.sh
+	@bash tests/test_lock.sh
+	@bash tests/test_config.sh
 
 clean:
 	@rm -rf stages/ .stage_* docs/PLAN.md docs/TEST_REPORT.md docs/README.md

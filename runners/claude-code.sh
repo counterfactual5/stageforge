@@ -26,9 +26,12 @@ runner_run() {
         return 1
     fi
     
-    local model_flag=""
+    # Args must survive values with spaces/globs verbatim: an unquoted
+    # `$model_flag` would word-split AND pathname-expand into extra CLI
+    # arguments. Use an array with the empty-array guard for bash 3.2 + set -u.
+    local model_args=()
     if [[ -n "$model" ]]; then
-        model_flag="--model $model"
+        model_args=(--model "$model")
     fi
     
     # Map stage name to system prompt behavior
@@ -53,13 +56,25 @@ runner_run() {
     echo "[claude-code] Working directory: $workdir"
     [[ -n "$model" ]] && echo "[claude-code] Model: $model"
     
-    # Claude Code headless mode
-    claude --print \
-        --system-prompt "$prompt" \
-        $model_flag \
-        --allowedTools "$allowed_tools" \
-        --cwd "$workdir" \
-        "Execute the $stage stage. Follow the system prompt instructions precisely. Project directory: $workdir"
-    
-    return $?
+    # Claude Code headless mode. This CLI has no --cwd flag (verified
+    # against claude 2.1.285, which rejects it with "unknown option"); it
+    # operates on the current working directory, so run from inside $workdir
+    # in a subshell — the same pattern the codex/gemini runners use.
+    #
+    # --allowedTools is a VARIADIC flag (`--allowedTools <tools...>`): in
+    # space-separated form it swallows every following non-flag argument,
+    # including the positional prompt, and claude then aborts with "Input
+    # must be provided either through stdin or as a prompt argument".
+    # The equals form passes the tool list as ONE value and the prompt
+    # survives as the positional argument (verified against 2.1.285).
+    local result=0
+    (
+        cd "$workdir" || exit 1
+        claude --print \
+            --system-prompt "$prompt" \
+            ${model_args[@]+"${model_args[@]}"} \
+            --allowedTools="$allowed_tools" \
+            "Execute the $stage stage. Follow the system prompt instructions precisely. Project directory: $workdir"
+    ) || result=$?
+    return $result
 }

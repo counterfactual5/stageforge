@@ -26,9 +26,15 @@ DRY_RUN=false
 FAST_TRACK=false
 ITERATE=false
 CONFIG_FILE=""
-STAGE_MAX_RETRIES="${STAGEFORGE_MAX_RETRIES:-3}"
+# Retry budget precedence (resolved in run_pipeline, after load_config):
+#   env STAGEFORGE_MAX_RETRIES > stageforge.yaml max_retries > built-in 3.
+# An empty value here means "env did not set it" — the config file may still
+# fill it, and the built-in default is applied last.
+STAGE_MAX_RETRIES="${STAGEFORGE_MAX_RETRIES:-}"
 
 # ─── Shared modules ───
+# shellcheck source=../core/lock.sh
+source "$PROJECT_ROOT/core/lock.sh"
 # shellcheck source=../core/signal.sh
 source "$PROJECT_ROOT/core/signal.sh"
 # shellcheck source=../core/validate.sh
@@ -89,6 +95,25 @@ warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
 stage() { echo -e "\n${CYAN}${BOLD}━━━ Stage $1: $2 ━━━${NC}"; }
 
+# Extract one scalar value from the config file via grep_oP, trimming
+# whitespace, newlines and one layer of surrounding quotes (so `key: ""`
+# yields empty rather than the two-character string `""`).
+# Usage: _cfgval <anchored-pcre-pattern> <file>
+_cfgval() {
+    local raw
+    raw=$(grep_oP "$1" "$2" || true)
+    raw="${raw%%$'\n'*}"
+    raw="${raw#"${raw%%[![:space:]]*}"}"
+    raw="${raw%"${raw##*[![:space:]]}"}"
+    if [[ ${#raw} -ge 2 && (
+            ( "${raw:0:1}" == '"'  && "${raw: -1:1}" == '"'  ) ||
+            ( "${raw:0:1}" == "'"  && "${raw: -1:1}" == "'"  )
+        ) ]]; then
+        raw="${raw:1:${#raw}-2}"
+    fi
+    printf '%s' "$raw"
+}
+
 # ─── Load Config ───
 load_config() {
     local project_dir="$1"
@@ -96,12 +121,20 @@ load_config() {
 
     if [[ -f "$config_path" ]]; then
         info "Loading config: $config_path"
-        # Simple YAML parsing via grep (no yq dependency required)
-        PLANNER_MODEL="${PLANNER_MODEL:-$(grep_oP 'planner:\s*\\K.*' "$config_path" || true)}"
-        BUILDER_MODEL="${BUILDER_MODEL:-$(grep_oP 'builder:\s*\\K.*' "$config_path" || true)}"
-        REVIEWER_MODEL="${REVIEWER_MODEL:-$(grep_oP 'reviewer:\s*\\K.*' "$config_path" || true)}"
-        CONSULTANT_MODEL="${CONSULTANT_MODEL:-$(grep_oP 'consultant:\s*\\K.*' "$config_path" || true)}"
-        RUNNER="${RUNNER:-$(grep_oP 'runner:\s*\\K.*' "$config_path" || true)}"
+        # Simple YAML parsing via grep (no yq dependency required).
+        # Patterns are anchored (^\s*key:) so comment lines like
+        # "# Agent runner: claude-code | ..." cannot match; \K (single
+        # backslash!) drops the matched prefix from the output.
+        PLANNER_MODEL="${PLANNER_MODEL:-$(_cfgval '^[[:space:]]*planner:[[:space:]]*\K.*' "$config_path")}"
+        BUILDER_MODEL="${BUILDER_MODEL:-$(_cfgval '^[[:space:]]*builder:[[:space:]]*\K.*' "$config_path")}"
+        REVIEWER_MODEL="${REVIEWER_MODEL:-$(_cfgval '^[[:space:]]*reviewer:[[:space:]]*\K.*' "$config_path")}"
+        CONSULTANT_MODEL="${CONSULTANT_MODEL:-$(_cfgval '^[[:space:]]*consultant:[[:space:]]*\K.*' "$config_path")}"
+        RUNNER="${RUNNER:-$(_cfgval '^runner:[[:space:]]*\K.*' "$config_path")}"
+        # max_retries only applies when the environment left it unset —
+        # explicit env config (STAGEFORGE_MAX_RETRIES) wins over the file.
+        if [[ -z "$STAGE_MAX_RETRIES" ]]; then
+            STAGE_MAX_RETRIES="$(_cfgval '^max_retries:[[:space:]]*\K.*' "$config_path")"
+        fi
     fi
 
     # Apply global model override
@@ -164,6 +197,9 @@ cmd_init() {
     cat > "$project_dir/.gitignore" <<'EOF'
 stages/.stage_*
 stages/.pipeline_*
+stages/.run_id
+stages/.lock/
+stages/stageforge-*
 EOF
 
     ok "Project initialized: $project_dir"
@@ -191,7 +227,7 @@ cmd_status() {
 
         if [[ -f "$signal" ]]; then
             local ts
-            ts=$(cat "$signal" | head -1)
+            ts=$(head -n 1 "$signal" 2>/dev/null || true)
             ok "Stage $num ($name): completed at $ts"
         else
             echo -e "${YELLOW}[ ]${NC} Stage $num ($name): pending"
@@ -220,13 +256,22 @@ cmd_resume() {
     local project_dir="$1"
     local task="${TASK:-resume from last completed stage}"
 
+    # Absolutize BEFORE taking the lock: the lock path is stored as given, and
+    # a runner that changes the process cwd in-place (mock runner does) would
+    # otherwise make release resolve the relative lock path against the wrong
+    # directory and leak the lock. run_pipeline re-locks by absolute path and
+    # hits the same-PID reentrant path.
+    if [[ -d "$project_dir" ]]; then
+        project_dir="$(cd "$project_dir" && pwd)"
+    fi
+
+    # Keep the state snapshot and the subsequent rewind/run under one lock.
+    # run_pipeline's acquire is reentrant for this PID.
+    pipeline_lock_acquire "$project_dir" || exit 1
+
     # Find last *recorded* completed stage (signal existence only).
-    local signalled_last=-1
-    for i in 0 1 2 3; do
-        if [[ -f "$project_dir/stages/.stage_${i}_done" ]]; then
-            signalled_last=$i
-        fi
-    done
+    local signalled_last
+    signalled_last=$(signal_last_complete "$project_dir")
 
     # Reconcile against artifacts on disk: a stage may be marked done while its
     # outputs are gone. Resume from the last artifact-backed stage instead.
@@ -310,7 +355,22 @@ run_pipeline() {
     fi
     project_dir="$(cd "$project_dir" && pwd)"
 
+    # One run per project directory: guards the whole stages/ critical
+    # section (.run_id rewrite, signal clean/create, verification reads).
+    pipeline_lock_acquire "$project_dir" || exit 1
+
     load_config "$project_dir"
+
+    # Resolve the retry budget now that config has been read (env > file > 3),
+    # rejecting junk values instead of letting them blow up in the loop's
+    # arithmetic test. max_retries: 0 is honored literally (no attempt runs).
+    if [[ -z "$STAGE_MAX_RETRIES" ]]; then
+        STAGE_MAX_RETRIES=3
+    elif [[ ! "$STAGE_MAX_RETRIES" =~ ^[0-9]+$ ]]; then
+        warn "Ignoring invalid max_retries: '$STAGE_MAX_RETRIES' (using 3)"
+        STAGE_MAX_RETRIES=3
+    fi
+
     local runner_path
     runner_path=$(detect_runner)
     source "$runner_path"
@@ -321,17 +381,20 @@ run_pipeline() {
 
     # Allocate a fresh run-ID for this invocation and export it so that runners
     # / AI subprocesses can embed it into the signal files they write.
+    # Use the freshly generated value directly — do NOT read it back from
+    # stages/.run_id: a concurrent run in the same directory could overwrite
+    # that file between write and read, making this run stamp signals with
+    # another run's ID.
     local run_id
     run_id=$(signal_init_run "$project_dir")
     export STAGEFORGE_RUN_ID="$run_id"
-    export STAGEFORGE_RUN_ID="$(signal_current_run_id "$project_dir")"
     # Match policy.py resolution: yaml/yml first, then json.
-    if [ -f "$HOME/.stageforge/policy.yaml" ]; then
-        export POLICY_FILE="$HOME/.stageforge/policy.yaml"
-    elif [ -f "$HOME/.stageforge/policy.yml" ]; then
-        export POLICY_FILE="$HOME/.stageforge/policy.yml"
-    elif [ -f "$HOME/.stageforge/policy.json" ]; then
-        export POLICY_FILE="$HOME/.stageforge/policy.json"
+    if [ -f "${HOME:-}/.stageforge/policy.yaml" ]; then
+        export POLICY_FILE="${HOME:-}/.stageforge/policy.yaml"
+    elif [ -f "${HOME:-}/.stageforge/policy.yml" ]; then
+        export POLICY_FILE="${HOME:-}/.stageforge/policy.yml"
+    elif [ -f "${HOME:-}/.stageforge/policy.json" ]; then
+        export POLICY_FILE="${HOME:-}/.stageforge/policy.json"
     fi
 
     info "Runner: $(runner_name)"

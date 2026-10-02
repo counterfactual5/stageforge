@@ -12,13 +12,7 @@ models:
   reviewer: ""
   consultant: ""
 
-# Fallback model when primary fails after max retries
-fallback: ""
-
 # Pipeline settings
+# Per-stage retry budget. A shell environment variable
+# STAGEFORGE_MAX_RETRIES takes precedence over this value.
 max_retries: 3
-
-# Stage configuration
-# Uncomment to skip specific stages
-# skip_stages:
-#   - consultant

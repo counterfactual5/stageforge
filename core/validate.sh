@@ -121,8 +121,9 @@ stage_artifacts_present() {
 
 # Reconcile recorded completion against on-disk artifacts.
 # Echoes the highest stage forming an unbroken, artifact-backed prefix
-# (-1 if none). Walks 0→3 and stops at the first stage that is either not
-# signalled done or whose artifacts have gone missing.
+# (-1 if none). Walks 0→3 and stops at the first stage whose signal is
+# missing, untrustworthy (foreign/unknown/truncated run_id), or whose
+# artifacts have gone missing.
 # Usage: reconcile_resume_point <project_dir>
 reconcile_resume_point() {
     local project_dir="$1"
@@ -133,6 +134,10 @@ reconcile_resume_point() {
     local i
     for i in 0 1 2 3; do
         if ! signal_check "$i" "$project_dir"; then
+            break
+        fi
+        if ! signal_trusted_on_resume "$i" "$project_dir"; then
+            echo "[VALIDATE] Stage $i signal run_id does not match any known run — rewinding resume point to Stage $i." >&2
             break
         fi
         if ! stage_artifacts_present "$i" "$project_dir"; then

@@ -84,6 +84,65 @@ d="$(make_project 2)"; rm -f "$d/stages/.stage_1_done"
 check "signal gap stops at 0" "0" "$(reconcile_resume_point "$d" 2>/dev/null)"
 rm -rf "$d"
 
+# ─── run-ID trust rules (signal_trusted_on_resume via reconcile) ───
+# Write a proper v0.4-style signal (timestamp line + run_id line).
+write_signal() {
+    local dir="$1" stage="$2" run_id="$3"
+    {
+        echo "2026-05-28T00:00:00Z"
+        echo "run_id: $run_id"
+    } > "$dir/stages/.stage_${stage}_done"
+}
+
+# 8. Explicit run_id matching stages/.run_id history → trusted (fixture
+#    make_project writes 'run-test' as the only known id).
+d="$(make_project 2)"
+write_signal "$d" 0 "run-test"; write_signal "$d" 1 "run-test"; write_signal "$d" 2 "run-test"
+check "matching run_ids → 2" "2" "$(reconcile_resume_point "$d" 2>/dev/null)"
+rm -rf "$d"
+
+# 9. Foreign run_id on stage 1 (not in history) → rewind to stage 0.
+d="$(make_project 2)"
+write_signal "$d" 0 "run-test"; write_signal "$d" 1 "some-other-run"
+check "foreign run_id rewinds to 0" "0" "$(reconcile_resume_point "$d" 2>/dev/null)"
+rm -rf "$d"
+
+# 10. 'unknown' run_id (a malformed signal from an interrupted run) → rewind.
+d="$(make_project 2)"
+write_signal "$d" 1 "unknown"
+check "unknown run_id rewinds to 0" "0" "$(reconcile_resume_point "$d" 2>/dev/null)"
+rm -rf "$d"
+
+# 11. Truncated run_id line → no history match → rewind to before it.
+d="$(make_project 2)"
+write_signal "$d" 0 "run-tes"   # partial copy of "run-test"
+check "truncated run_id rewinds to -1" "-1" "$(reconcile_resume_point "$d" 2>/dev/null)"
+rm -rf "$d"
+
+# 12. Legitimate multi-run resume chain: stage 0 from an older recorded run,
+#     stage 1 from the newest one (both present in .run_id history) → 1.
+d="$(make_project 1)"
+write_signal "$d" 0 "run-test"; write_signal "$d" 1 "run-newer"
+signal_record_run "$d" "run-newer"
+check "multi-run chain honored" "1" "$(reconcile_resume_point "$d" 2>/dev/null)"
+check "current id is newest line" "run-newer" "$(signal_current_run_id "$d")"
+rm -rf "$d"
+
+# 13. run_id present but the .run_id history file is gone → untrustworthy.
+d="$(make_project 1)"; rm -f "$d/stages/.run_id"
+write_signal "$d" 0 "run-test"
+check "no history file rejects id-bearing signal" "-1" "$(reconcile_resume_point "$d" 2>/dev/null)"
+rm -rf "$d"
+
+# 14. signal_verify stays strict for in-flight verification: an exact-id
+#     signal verifies, a legacy empty one does not (old run must not count).
+d="$(make_project 0)"
+write_signal "$d" 0 "run-test"
+if signal_verify 0 "$d" "run-test"; then check "signal_verify exact match" "pass" "pass"; else check "signal_verify exact match" "pass" "fail"; fi
+: > "$d/stages/.stage_0_done"   # truncate: a no-id signal never verifies
+if signal_verify 0 "$d" "run-test"; then check "signal_verify rejects empty signal" "fail" "pass"; else check "signal_verify rejects empty signal" "fail" "fail"; fi
+rm -rf "$d"
+
 echo
 echo "Passed: $PASS  Failed: $FAIL"
 [[ $FAIL -eq 0 ]]
