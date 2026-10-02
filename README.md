@@ -196,6 +196,21 @@ Then use it:
 stageforge run my-app -t "..." -r /path/to/my-agent.sh
 ```
 
+### Testing without an agent: the mock runner
+
+`mock` is a built-in runner that fakes every stage by writing the expected
+artifacts — useful for trying the pipeline or CI without agent API costs:
+
+```bash
+stageforge run my-app -t "..." -r mock
+
+# Inject failures to exercise retry / missing-signal / stale-signal paths:
+STAGEFORGE_MOCK_FAIL_STAGES=builder   stageforge run my-app -t "..." -r mock
+STAGEFORGE_MOCK_NO_SIGNAL=reviewer    stageforge run my-app -t "..." -r mock
+STAGEFORGE_MOCK_STALE_SIGNAL=reviewer stageforge run my-app -t "..." -r mock
+# (each variable takes a comma-separated stage list)
+```
+
 ## Project Structure (After Pipeline)
 
 ```

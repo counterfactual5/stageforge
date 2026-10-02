@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 # Runner: Mock (for testing stageforge orchestration without a real agent)
 # Simulates each stage by creating expected artifacts.
+#
+# Failure injection — three environment variables, each a comma-separated
+# list of stage names (planner,builder,reviewer,consultant). They exist to
+# drive the orchestrator's three distinct failure paths without a real agent:
+#
+#   STAGEFORGE_MOCK_FAIL_STAGES   runner exits non-zero → exercises the retry
+#                                 loop; with max_retries exhausted the stage
+#                                 fails and writes .stage_<N>_failed
+#   STAGEFORGE_MOCK_NO_SIGNAL     runner exits 0 but writes NO signal →
+#                                 exercises "ran but did not write signal"
+#   STAGEFORGE_MOCK_STALE_SIGNAL  runner writes a signal with a FOREIGN
+#                                 run_id → exercises the stale-signal branch
+#                                 (verify mismatch, signal removed, retry)
+#
+# Unset (the default) keeps the historical always-succeeds behavior.
 
 runner_name()  { echo "mock"; }
 runner_check() { true; }
@@ -9,6 +24,15 @@ runner_check() { true; }
 # signal-verification step in bin/stageforge accepts the mock's signal files.
 _mock_run_id_line() {
     echo "run_id: ${STAGEFORGE_RUN_ID:-mock-run}"
+}
+
+# Is $1 a member of the comma-separated list $2? Pure case-matching: no
+# arrays, safe on bash 3.2 under set -u.
+_mock_listed() {
+    case ",${2:-}," in
+        *",$1,"*) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 runner_run() {
@@ -22,6 +46,11 @@ runner_run() {
     workdir="$(cd "$workdir" && pwd)"
 
     echo "[mock] Simulating stage: $stage in $workdir"
+
+    if _mock_listed "$stage" "${STAGEFORGE_MOCK_FAIL_STAGES:-}"; then
+        echo "[mock] Stage $stage: injected failure (STAGEFORGE_MOCK_FAIL_STAGES)"
+        return 1
+    fi
     
     case "$stage" in
         planner)
@@ -334,6 +363,33 @@ README
             echo "[mock] Stage 3 (Consultant) done."
             ;;
     esac
-    
+
+    # Injection points that need the stage's artifacts to exist first.
+    local n
+    case "$stage" in
+        planner)    n=0 ;;
+        builder)    n=1 ;;
+        reviewer)   n=2 ;;
+        consultant) n=3 ;;
+        *)          n=-1 ;;
+    esac
+
+    if _mock_listed "$stage" "${STAGEFORGE_MOCK_NO_SIGNAL:-}"; then
+        # The stage arm above already wrote its signal; remove it so the
+        # observable state matches a real runner that died after doing the
+        # work but before signalling.
+        rm -f "$workdir/stages/.stage_${n}_done"
+        echo "[mock] Stage $stage: injected missing signal (STAGEFORGE_MOCK_NO_SIGNAL)"
+        return 0
+    fi
+
+    local id_line
+    id_line=$(_mock_run_id_line)
+    if _mock_listed "$stage" "${STAGEFORGE_MOCK_STALE_SIGNAL:-}"; then
+        id_line="run_id: 000000000-99999-injected-stale"
+        echo "[mock] Stage $stage: injecting foreign run_id (STAGEFORGE_MOCK_STALE_SIGNAL)"
+    fi
+    { date_iso; echo "$id_line"; } > "$workdir/stages/.stage_${n}_done"
+
     return 0
 }

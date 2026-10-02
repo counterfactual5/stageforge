@@ -35,11 +35,13 @@ test:
 	@bash -n tests/test_lock.sh && echo "tests/test_lock.sh: syntax OK"
 	@bash -n tests/test_config.sh && echo "tests/test_config.sh: syntax OK"
 	@bash -n tests/test_rollback.sh && echo "tests/test_rollback.sh: syntax OK"
+	@bash -n tests/test_mock.sh && echo "tests/test_mock.sh: syntax OK"
 	@echo "Running unit tests..."
 	@bash tests/test_reconcile.sh
 	@bash tests/test_lock.sh
 	@bash tests/test_config.sh
 	@bash tests/test_rollback.sh
+	@bash tests/test_mock.sh
 
 clean:
 	@rm -rf stages/ .stage_* docs/PLAN.md docs/TEST_REPORT.md docs/README.md
