@@ -22,6 +22,9 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      # macOS runner images do not preinstall shellcheck (ubuntu does).
+      - name: Install shellcheck
+        run: brew install shellcheck
       # The macOS system shell is exactly the bash 3.2 this project targets,
       # so this job is the real compat gate for core/compat.sh.
       - name: Lint (shellcheck, severity >= warning fails)

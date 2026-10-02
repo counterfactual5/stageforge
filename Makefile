@@ -18,7 +18,7 @@ uninstall:
 test:
 	@echo "Running shellcheck..."
 	@if command -v shellcheck >/dev/null 2>&1; then \
-	    shellcheck bin/stageforge core/*.sh runners/*.sh tests/*.sh; \
+	    shellcheck -S warning bin/stageforge core/*.sh runners/*.sh tests/*.sh; \
 	else \
 	    echo "shellcheck not installed — lint SKIPPED (not a pass)"; \
 	fi
