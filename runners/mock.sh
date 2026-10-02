@@ -37,8 +37,12 @@ _mock_listed() {
 
 runner_run() {
     local stage="$1"
+    # prompt/model are part of the documented 4-argument runner ABI; the mock
+    # ignores them because it fakes stage output rather than interpreting it.
+    # shellcheck disable=SC2034
     local prompt="$2"
     local workdir="$3"
+    # shellcheck disable=SC2034
     local model="${4:-}"
 
     # Normalize to absolute path so later `cd "$workdir"` calls do not break

@@ -19,6 +19,9 @@ runner_run() {
     local prompt="$2"
     local workdir="$3"
     local model="${4:-}"
+    # mode is the documented-optional 5th ABI argument; claude-code's headless
+    # mode is fixed by --print, so it is received but unused.
+    # shellcheck disable=SC2034
     local mode="${5:-}"
     
     if ! runner_check; then

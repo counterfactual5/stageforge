@@ -23,8 +23,6 @@ RUNNER=""
 MODEL=""
 TASK=""
 DRY_RUN=false
-FAST_TRACK=false
-ITERATE=false
 CONFIG_FILE=""
 # Retry budget precedence (resolved in run_pipeline, after load_config):
 #   env STAGEFORGE_MAX_RETRIES > stageforge.yaml max_retries > built-in 3.
@@ -140,7 +138,8 @@ resolve_rollback_budget() {
 # stages/.rollbacks ledger). Echoes 0 when the project has never rolled back.
 # Usage: rollbacks_used <project_dir>
 rollbacks_used() {
-    local project_dir="$1" file="$project_dir/stages/.rollbacks"
+    local project_dir="$1"
+    local file="$project_dir/stages/.rollbacks"
     [[ -f "$file" ]] || { printf '0'; return 0; }
     wc -l < "$file" | tr -d ' '
 }
@@ -201,6 +200,7 @@ detect_runner() {
     for runner_name in claude-code codex-cli; do
         local runner_path="$PROJECT_ROOT/runners/${runner_name}.sh"
         if [[ -f "$runner_path" ]]; then
+            # shellcheck disable=SC1090  # probing built-ins by name
             source "$runner_path"
             if runner_check 2>/dev/null; then
                 echo "$runner_path"
@@ -424,6 +424,7 @@ run_pipeline() {
 
     local runner_path
     runner_path=$(detect_runner)
+    # shellcheck disable=SC1090  # runner path is resolved at runtime by design
     source "$runner_path"
 
     # Wipe any stale signal files from start_stage onwards so old runs cannot
@@ -615,6 +616,7 @@ cmd_quick() {
     load_config "$project_dir"
     local runner_path
     runner_path=$(detect_runner)
+    # shellcheck disable=SC1090  # runner path is resolved at runtime by design
     source "$runner_path"
 
     info "Runner: $(runner_name)"

@@ -15,6 +15,8 @@ runner_run() {
     local prompt="$2"
     local workdir="$3"
     local model="${4:-}"
+    # mode is the documented-optional 5th ABI argument; received but unused.
+    # shellcheck disable=SC2034
     local mode="${5:-}"
     
     if ! runner_check; then
@@ -39,7 +41,7 @@ runner_run() {
     echo "$prompt" > "$prompt_file"
     
     (
-        cd "$workdir"
+        cd "$workdir" || exit 1
         gemini -p "$(cat "$prompt_file")" \
             ${model_args[@]+"${model_args[@]}"} \
             --sandbox=false \
