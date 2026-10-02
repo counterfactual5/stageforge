@@ -27,7 +27,19 @@ Review EVERY item below and mark each as ✅ or ❌ in your report:
 4. If you find issues, **fix them directly** in the files (don't just report)
 5. Re-run verification after fixes
 6. Write the review to `docs/TEST_REPORT.md`
-7. Create the signal file
+7. Decide the verdict and create the signal file (see Completion)
+
+## Escalation (rare)
+
+Fixing in place is the default. Escalate — `verdict: needs_work` — ONLY when
+you find a **structural defect that editing code cannot fix**: the plan itself
+is wrong or infeasible, requirements contradict each other, or the chosen
+approach must be redone. When you escalate, name the stage to return to
+(`return_to`: 0 = Planner for plan-level defects, 1 = Builder for
+scope/approach mismatches) and say why in TEST_REPORT.md.
+
+Everything you can repair by editing files, you MUST repair yourself.
+Escalation is for decisions only the earlier stages can re-make.
 
 ## TEST_REPORT.md Format
 
@@ -62,6 +74,8 @@ Review EVERY item below and mark each as ✅ or ❌ in your report:
 
 - ❌ Read code but skip running it
 - ❌ Report issues without fixing them
+- ❌ Escalate (`needs_work`) a problem you could have fixed by editing files —
+  escalation is for plan-level defects only
 - ❌ Ignore compiler/linter warnings
 - ❌ Write TEST_REPORT.md to root instead of docs/
 - ❌ Send any notification to the user — your output is files only
@@ -72,10 +86,18 @@ After review and fixes, write the signal file embedding the Run ID provided by
 the orchestrator (also exported as `$STAGEFORGE_RUN_ID`). The orchestrator
 treats the stage as failed if the id does not match.
 
+Include exactly one verdict line:
+- `verdict: ok` — the normal outcome; you fixed what you found.
+- `verdict: needs_work` plus a `return_to: <stage>` line — ONLY for the
+  structural escalations described above (`return_to: 0` for Planner,
+  `return_to: 1` for Builder).
+
 ```bash
 {
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "run_id: ${STAGEFORGE_RUN_ID:?STAGEFORGE_RUN_ID must be set by orchestrator}"
+  echo "verdict: ok"                    # or: verdict: needs_work
+  # echo "return_to: 0"                # only together with needs_work
   echo "Issues found: <count>"
   echo "Issues fixed: <count>"
 } > stages/.stage_2_done

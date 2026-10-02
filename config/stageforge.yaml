@@ -16,3 +16,8 @@ models:
 # Per-stage retry budget. A shell environment variable
 # STAGEFORGE_MAX_RETRIES takes precedence over this value.
 max_retries: 3
+
+# How many times a stage may send the pipeline back to an earlier stage
+# (verdict: needs_work). Committed to git as an audit trail; 0 disables
+# rollback. STAGEFORGE_MAX_ROLLBACKS takes precedence.
+max_rollbacks: 3

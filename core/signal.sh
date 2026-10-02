@@ -112,6 +112,24 @@ signal_read_run_id() {
         | sed -E 's/^run_id:[[:space:]]*//'
 }
 
+# Read the optional verdict lines from a done-signal.
+# Prints "<verdict>|<return_to>"; either side may be empty. verdict is
+# ok|needs_work when well-formed; return_to is an integer when present.
+# Callers MUST treat every other shape as malformed (fail-open: warn and
+# continue) — this function only reports what is written, it does not judge.
+# Usage: signal_read_verdict <stage_num> <project_dir>
+signal_read_verdict() {
+    local stage_num="$1"
+    local project_dir="$2"
+    local signal_file="$project_dir/stages/.stage_${stage_num}_done"
+    local v="" r=""
+    if [[ -f "$signal_file" ]]; then
+        v=$(grep -m1 '^verdict:' "$signal_file" 2>/dev/null | sed -E 's/^verdict:[[:space:]]*//' || true)
+        r=$(grep -m1 '^return_to:' "$signal_file" 2>/dev/null | sed -E 's/^return_to:[[:space:]]*//' || true)
+    fi
+    printf '%s|%s\n' "$v" "$r"
+}
+
 # Verify that a signal file exists AND was produced by the expected run.
 # Usage: signal_verify <stage_num> <project_dir> [expected_run_id]
 # If expected_run_id is omitted, uses $STAGEFORGE_RUN_ID, else falls back to .run_id.

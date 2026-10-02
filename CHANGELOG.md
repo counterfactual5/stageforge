@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added
+- **Bounded conditional rollback (verdict contract)** — a completed stage may
+  send the pipeline back to an earlier stage by writing `verdict: needs_work`
+  plus `return_to: <stage>` into its signal file. The orchestrator re-reads the
+  signal after verification (never via return codes, which `set -e` if-context
+  swallows) and rewinds within a durable budget: `max_rollbacks` (env >
+  config > 3; 0 disables rollback; junk falls back to 3), counted by
+  `stages/.rollbacks` — an append-only audit trail that is committed to git so
+  the budget travels with the project. Signals are cleaned BEFORE the
+  rollback is recorded, so a crash can only under-count the budget, never
+  consume it for a rollback that never happened. Malformed or out-of-range
+  `return_to` fails open (warn with the raw value, then continue) — fail-closed
+  would let reviewer format drift hang the pipeline. Rollbacks crossing this
+  run's start boundary warn loudly: re-runs overwrite artifacts of stages from
+  the rollback point onward, including manual edits. `cmd_status` now shows
+  rollback budget usage. In v1 only the reviewer prompt writes verdicts; the
+  mechanism is stage-agnostic (stage 0's legal domain is empty by construction:
+  any return_to ≥ 0 fails the range check). The `quick` path does not run
+  stages through the pipeline and therefore has no verdict processing.
+
 ### Fixed
 - **Config file was never read** — `load_config` used `\\K` inside a single-quoted
   pattern, so PCRE matched a literal `\K` and every lookup returned empty. The

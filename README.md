@@ -32,6 +32,7 @@ Each stage produces **verifiable artifacts** and a **signal file** for the next 
 - 🔄 **Dual-path** — Greenfield (new projects) and Brownfield (iterate on existing code)
 - ⚡ **Quick Track** — Simple tasks skip the full pipeline
 - 🛡️ **Built-in retry** — Each stage retries up to `max_retries` times; a failed stage stops the pipeline with a failure signal
+- ↩️ **Bounded rollback** — A stage can send the pipeline back to an earlier stage (`verdict: needs_work`), limited by `max_rollbacks`; artifacts of re-run stages are overwritten
 - 📋 **Signal protocol** — File-based stage coordination, no external dependencies
 - 🎯 **Model routing** — Different models for different stages via config
 
@@ -159,8 +160,12 @@ models:
   reviewer: ""
   consultant: ""
 
-# Retry count per stage (env STAGEFORGE_MAX_RETRIES takes precedence)
+# Retry count per stage (env STAGEFORGE_MAX_ROLLBACKS... see below)
 max_retries: 3
+
+# Bounded rollbacks: a stage may send the pipeline back to an earlier stage
+# via verdict: needs_work. 0 disables rollback entirely.
+max_rollbacks: 3
 ```
 
 ## Custom Runners
@@ -225,6 +230,7 @@ Each stage:
 2. **Runs** the agent with a specialized system prompt
 3. **Creates** a signal file upon completion
 4. **Fails gracefully** — retries up to `max_retries` times, then stops with a failure signal
+5. **May request a bounded rollback** — a stage dissatisfied with an earlier decision (a plan-level defect) can rewind the pipeline to that stage, within the `max_rollbacks` budget; re-runs overwrite the artifacts of stages from the rollback point onward, including any manual edits
 
 ## Comparison
 

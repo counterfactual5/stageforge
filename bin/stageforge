@@ -31,6 +31,10 @@ CONFIG_FILE=""
 # An empty value here means "env did not set it" — the config file may still
 # fill it, and the built-in default is applied last.
 STAGE_MAX_RETRIES="${STAGEFORGE_MAX_RETRIES:-}"
+# Rollback budget precedence (resolved in run_pipeline, after load_config):
+#   env STAGEFORGE_MAX_ROLLBACKS > stageforge.yaml max_rollbacks > built-in 3.
+# 0 disables rollback (needs_work then degrades to warn + continue).
+STAGE_MAX_ROLLBACKS="${STAGEFORGE_MAX_ROLLBACKS:-}"
 
 # ─── Shared modules ───
 # shellcheck source=../core/lock.sh
@@ -134,6 +138,9 @@ load_config() {
         # explicit env config (STAGEFORGE_MAX_RETRIES) wins over the file.
         if [[ -z "$STAGE_MAX_RETRIES" ]]; then
             STAGE_MAX_RETRIES="$(_cfgval '^max_retries:[[:space:]]*\K.*' "$config_path")"
+        fi
+        if [[ -z "$STAGE_MAX_ROLLBACKS" ]]; then
+            STAGE_MAX_ROLLBACKS="$(_cfgval '^max_rollbacks:[[:space:]]*\K.*' "$config_path")"
         fi
     fi
 
@@ -243,6 +250,18 @@ cmd_status() {
     else
         info "Pipeline: in progress"
     fi
+
+    # Rollback budget visibility: a malformed needs_work fails open (warn +
+    # continue), so the remaining budget must be visible somewhere other than
+    # a run's scrollback. Read the same env > config > 3 chain as run_pipeline.
+    local rb_max="${STAGEFORGE_MAX_ROLLBACKS:-}"
+    if [[ -z "$rb_max" ]]; then
+        rb_max=$(_cfgval '^max_rollbacks:[[:space:]]*\K.*' "${CONFIG_FILE:-$project_dir/stageforge.yaml}" 2>/dev/null || true)
+    fi
+    [[ "$rb_max" =~ ^[0-9]+$ ]] || rb_max=3
+    local rb_used=0
+    [[ -f "$project_dir/stages/.rollbacks" ]] && rb_used=$(wc -l < "$project_dir/stages/.rollbacks" | tr -d ' ')
+    info "Rollbacks used: $rb_used/$rb_max"
 
     local cur_run_id
     cur_run_id=$(signal_current_run_id "$project_dir")
@@ -371,6 +390,15 @@ run_pipeline() {
         STAGE_MAX_RETRIES=3
     fi
 
+    # Rollback budget: durable, per project (stages/.rollbacks line count).
+    # Same resolution rules as max_retries; 0 disables rollback entirely.
+    if [[ -z "$STAGE_MAX_ROLLBACKS" ]]; then
+        STAGE_MAX_ROLLBACKS=3
+    elif [[ ! "$STAGE_MAX_ROLLBACKS" =~ ^[0-9]+$ ]]; then
+        warn "Ignoring invalid max_rollbacks: '$STAGE_MAX_ROLLBACKS' (using 3)"
+        STAGE_MAX_ROLLBACKS=3
+    fi
+
     local runner_path
     runner_path=$(detect_runner)
     source "$runner_path"
@@ -405,51 +433,83 @@ run_pipeline() {
 
     local run_id_block="## Run ID\nWrite this exact id into stages/.stage_<N>_done as the second line in the form 'run_id: <id>'. The same value is exported as the STAGEFORGE_RUN_ID environment variable.\n$run_id"
 
-    # Stage 0: Planner
-    if [[ $start_stage -le 0 ]]; then
-        stage "0" "Planner"
-        local planner_prompt
-        planner_prompt=$(cat "$PROJECT_ROOT/prompts/planner.md")
-        run_stage_with_verify "0" "planner" \
-            "$planner_prompt\n\n$run_id_block\n\n## Task\n$task\n\n## Project Directory\n$project_dir" \
-            "${PLANNER_MODEL:-}"
+    # Stages run in a loop, not as sequential blocks, so a completed stage can
+    # request a bounded rewind (verdict contract, see core/signal.sh's
+    # signal_read_verdict): rollback re-runs from the requested stage with
+    # signals cleaned from there on. Artifacts of stages >= N are left on disk
+    # and are overwritten by the re-run — KNOWN BEHAVIOR, documented in the
+    # README (this includes manual edits when N is before this run's start).
+    local s="$start_stage"
+    while (( s <= 3 )); do
+        local stage_name prompt_text model
+        case "$s" in
+            0)
+                stage_name="planner"
+                prompt_text="$(cat "$PROJECT_ROOT/prompts/planner.md")\n\n$run_id_block\n\n## Task\n$task\n\n## Project Directory\n$project_dir"
+                model="${PLANNER_MODEL:-}"
+                ;;
+            1)
+                stage_name="builder"
+                prompt_text="$(cat "$PROJECT_ROOT/prompts/builder.md")\n\n$run_id_block\n\n## Plan Location\n$project_dir/docs/PLAN.md\n\n## Project Directory\n$project_dir"
+                model="${BUILDER_MODEL:-}"
+                ;;
+            2)
+                stage_name="reviewer"
+                prompt_text="$(cat "$PROJECT_ROOT/prompts/reviewer.md")\n\n$run_id_block\n\n## Project Directory\n$project_dir"
+                model="${REVIEWER_MODEL:-}"
+                ;;
+            3)
+                stage_name="consultant"
+                prompt_text="$(cat "$PROJECT_ROOT/prompts/consultant.md")\n\n$run_id_block\n\n## Project Directory\n$project_dir"
+                model="${CONSULTANT_MODEL:-}"
+                ;;
+        esac
 
-        if [[ "$DRY_RUN" == true ]]; then
+        stage "$s" "$stage_name"
+        run_stage_with_verify "$s" "$stage_name" "$prompt_text" "$model"
+
+        if [[ "$DRY_RUN" == true ]] && [[ "$s" -eq 0 ]]; then
             ok "Dry run complete. Review: $project_dir/docs/PLAN.md"
             ok "Remove --dry-run to continue the pipeline."
             exit 0
         fi
-    fi
 
-    # Stage 1: Builder
-    if [[ $start_stage -le 1 ]]; then
-        stage "1" "Builder"
-        local builder_prompt
-        builder_prompt=$(cat "$PROJECT_ROOT/prompts/builder.md")
-        run_stage_with_verify "1" "builder" \
-            "$builder_prompt\n\n$run_id_block\n\n## Plan Location\n$project_dir/docs/PLAN.md\n\n## Project Directory\n$project_dir" \
-            "${BUILDER_MODEL:-}"
-    fi
+        # Verdict contract: judged AFTER verify passes, by re-reading the
+        # signal file (single writer, inside the lock). Never signalled via
+        # return codes — set -e's if-context would swallow them.
+        local verdict_read verdict return_to
+        verdict_read=$(signal_read_verdict "$s" "$project_dir")
+        verdict="${verdict_read%%|*}"
+        return_to="${verdict_read#*|}"
 
-    # Stage 2: Reviewer
-    if [[ $start_stage -le 2 ]]; then
-        stage "2" "Reviewer"
-        local reviewer_prompt
-        reviewer_prompt=$(cat "$PROJECT_ROOT/prompts/reviewer.md")
-        run_stage_with_verify "2" "reviewer" \
-            "$reviewer_prompt\n\n$run_id_block\n\n## Project Directory\n$project_dir" \
-            "${REVIEWER_MODEL:-}"
-    fi
+        if [[ "$verdict" == "needs_work" ]]; then
+            if [[ ! "$return_to" =~ ^[0-9]+$ ]] || (( return_to >= s )); then
+                warn "Stage $s wrote verdict 'needs_work' with invalid return_to '${return_to:-<missing>}' (expected integer in [0, $((s - 1))]) — treating as ok and continuing."
+            elif [[ "$STAGE_MAX_ROLLBACKS" -eq 0 ]]; then
+                warn "Stage $s requested rollback to $return_to but max_rollbacks is 0 — continuing."
+            else
+                local rb_used=0
+                [[ -f "$project_dir/stages/.rollbacks" ]] && rb_used=$(wc -l < "$project_dir/stages/.rollbacks" | tr -d ' ')
+                if (( rb_used >= STAGE_MAX_ROLLBACKS )); then
+                    warn "Stage $s requested rollback to $return_to but the rollback budget is exhausted ($rb_used/$STAGE_MAX_ROLLBACKS) — continuing."
+                else
+                    if (( return_to < start_stage )); then
+                        warn "Rollback to Stage $return_to crosses this run's start (Stage $start_stage): earlier artifacts, including any manual edits, will be overwritten by the re-run."
+                    fi
+                    warn "Stage $s requested rollback — rewinding to Stage $return_to."
+                    # Clean FIRST, then record: a crash in between can only
+                    # under-count the budget by one, never consume budget for
+                    # a rollback that never happened.
+                    signal_clean_from "$project_dir" "$return_to"
+                    echo "$(date_iso) stage_$s -> stage_$return_to (needs_work)" >> "$project_dir/stages/.rollbacks"
+                    s="$return_to"
+                    continue
+                fi
+            fi
+        fi
 
-    # Stage 3: Consultant
-    if [[ $start_stage -le 3 ]]; then
-        stage "3" "Consultant"
-        local consultant_prompt
-        consultant_prompt=$(cat "$PROJECT_ROOT/prompts/consultant.md")
-        run_stage_with_verify "3" "consultant" \
-            "$consultant_prompt\n\n$run_id_block\n\n## Project Directory\n$project_dir" \
-            "${CONSULTANT_MODEL:-}"
-    fi
+        s=$((s + 1))
+    done
 
     # Pipeline complete — record the run that produced it.
     {
