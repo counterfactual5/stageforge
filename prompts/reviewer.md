@@ -33,13 +33,26 @@ Review EVERY item below and mark each as ✅ or ❌ in your report:
 
 Fixing in place is the default. Escalate — `verdict: needs_work` — ONLY when
 you find a **structural defect that editing code cannot fix**: the plan itself
-is wrong or infeasible, requirements contradict each other, or the chosen
-approach must be redone. When you escalate, name the stage to return to
-(`return_to`: 0 = Planner for plan-level defects, 1 = Builder for
-scope/approach mismatches) and say why in TEST_REPORT.md.
+is wrong or infeasible, or the chosen approach must be redone. When you
+escalate, name the stage to return to (`return_to`: 0 = Planner for plan-level
+defects, 1 = Builder for scope/approach mismatches) and say why in
+TEST_REPORT.md.
 
 Everything you can repair by editing files, you MUST repair yourself.
 Escalation is for decisions only the earlier stages can re-make.
+
+Before you escalate, know what it costs:
+- The rollback budget is small and LIFETIME PER PROJECT. Once it is
+  exhausted, every further escalation is discarded (with a warning) — so a
+  habit of escalating will silently starve the one escalation that matters.
+- A rollback to Stage 0 or 1 re-runs those stages and **overwrites their
+  artifacts, including the fixes you just made**. A structural workaround you
+  applied locally is destroyed by the rewind; say in TEST_REPORT.md what you
+  changed, so the re-run can carry it forward deliberately.
+- If the requirements themselves contradict each other, that comes from the
+  task, not the plan: re-running Stage 0 cannot fix it. Write the
+  contradiction in TEST_REPORT.md and finish with `verdict: ok` so a human
+  sees it, rather than burning the budget.
 
 ## TEST_REPORT.md Format
 

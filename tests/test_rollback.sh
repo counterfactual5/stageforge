@@ -30,6 +30,13 @@ count_in_log() {
     [[ -f "$file" ]] && grep -c "^$needle" "$file" | tr -d ' ' || echo 0
 }
 
+# .rollbacks is a human-read, committed file; count only real entries (they
+# start with an ISO timestamp) so a future header comment cannot skew counts.
+count_rollbacks() {
+    local file="$1"
+    [[ -f "$file" ]] && grep -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' "$file" | tr -d ' ' || echo 0
+}
+
 # Success runner whose reviewer reads $REVIEWER_VERDICT_FILE (a file the test
 # rewrites between invocations) to decide its verdict lines.
 make_runner() {
@@ -83,10 +90,12 @@ run_pipeline_case() {
 runner: "$runner"
 $@
 EOF
+    # env -u: the harness must not inherit a budget override, or an ambient
+    # STAGEFORGE_MAX_ROLLBACKS silently decides these cases.
     if [[ -n "$env_pair" ]]; then
-        env "$env_pair" "$STAGEFORGE" run "$d" -t "rollback regression" > "$d/output.log" 2>&1
+        env -u STAGEFORGE_MAX_ROLLBACKS "$env_pair" "$STAGEFORGE" run "$d" -t "rollback regression" > "$d/output.log" 2>&1
     else
-        "$STAGEFORGE" run "$d" -t "rollback regression" > "$d/output.log" 2>&1
+        env -u STAGEFORGE_MAX_ROLLBACKS "$STAGEFORGE" run "$d" -t "rollback regression" > "$d/output.log" 2>&1
     fi
     echo $?
 }
@@ -111,7 +120,7 @@ write_verdict "$VF" needs_work 0
 rc=$(run_pipeline_case "$d" "REVIEWER_VERDICT_FILE=$VF" "max_rollbacks: 1")
 check "rewind case: completes after budget exhaustion (rc 0)" 0 "$rc"
 check "rewind case: planner re-ran after needs_work" 2 "$(count_in_log "$d/stages-invocations.log" planner)"
-check "rewind case: rollback recorded" 1 "$(count_in_log "$d/stages/.rollbacks" .)"
+check "rewind case: rollback recorded" 1 "$(count_rollbacks "$d/stages/.rollbacks")"
 
 # ── 3. Malformed return_to fails open with a warning ──
 d="$base/malformed"; mkdir -p "$d"
@@ -128,10 +137,28 @@ VF="$d/verdict.txt"
 write_verdict "$VF" needs_work 0
 rc=$(run_pipeline_case "$d" "REVIEWER_VERDICT_FILE=$VF" "max_rollbacks: 1")
 check "budget exhausted: pipeline still completes" 0 "$rc"
-check "budget exhausted: exactly one rollback" 1 "$(count_in_log "$d/stages/.rollbacks" .)"
+check "budget exhausted: exactly one rollback" 1 "$(count_rollbacks "$d/stages/.rollbacks")"
 check "budget exhausted: warn emitted" 1 "$(grep -c 'budget is exhausted' "$d/output.log" | tr -d ' ')"
 
-# ── 5. max_rollbacks: 0 disables rollback entirely ──
+# ── 5. Non-canonical integer return_to (e.g. "01") fails open, not crash ──
+d="$base/zero-padded"; mkdir -p "$d"
+VF="$d/verdict.txt"
+printf 'verdict: needs_work\nreturn_to: 01\n' > "$VF"
+rc=$(run_pipeline_case "$d" "REVIEWER_VERDICT_FILE=$VF" "max_rollbacks: 1")
+check "zero-padded return_to: pipeline completes" 0 "$rc"
+check "zero-padded return_to: normalized to stage 1 (builder re-runs, planner does not)" 2 "$(count_in_log "$d/stages-invocations.log" builder)"
+check "zero-padded return_to: one rollback recorded" 1 "$(count_rollbacks "$d/stages/.rollbacks")"
+
+# ── 6. Unknown verdict value fails open with a visible warning ──
+d="$base/unknown-verdict"; mkdir -p "$d"
+VF="$d/verdict.txt"
+printf 'verdict: NEEDS_WORK\nreturn_to: 0\n' > "$VF"
+rc=$(run_pipeline_case "$d" "REVIEWER_VERDICT_FILE=$VF")
+check "unknown verdict: pipeline completes" 0 "$rc"
+check "unknown verdict: no rewind" 1 "$(count_in_log "$d/stages-invocations.log" planner)"
+check "unknown verdict: warn names the raw value" 1 "$(grep -c "unrecognized verdict 'NEEDS_WORK'" "$d/output.log" | tr -d ' ')"
+
+# ── 7. max_rollbacks: 0 disables rollback entirely ──
 d="$base/zero"; mkdir -p "$d"
 VF="$d/verdict.txt"
 write_verdict "$VF" needs_work 0
@@ -140,17 +167,20 @@ check "max_rollbacks 0: pipeline completes without rewinding" 0 "$rc"
 check "max_rollbacks 0: planner ran once" 1 "$(count_in_log "$d/stages-invocations.log" planner)"
 check "max_rollbacks 0: no .rollbacks file" no "$( [[ -f "$d/stages/.rollbacks" ]] && echo yes || echo no )"
 
-# ── 6. Budget survives resume (durable, committed audit trail) ──
+# ── 8. Budget survives resume (durable, committed audit trail) ──
 d="$base/durable"; mkdir -p "$d"
 VF="$d/verdict.txt"
 write_verdict "$VF" needs_work 0
 rc=$(run_pipeline_case "$d" "REVIEWER_VERDICT_FILE=$VF" "max_rollbacks: 1")
 check "durable: first run ok" 0 "$rc"
-cd "$d" > /dev/null 2>&1 || true
-"$STAGEFORGE" resume "$d" -t "durable" > "$d/resume.log" 2>&1; rc=$?
-cd - > /dev/null 2>&1 || true
+# Re-open the pipeline after its completion signal: the reviewer escalates
+# again, and the *persisted* budget (not a per-run counter) must block it.
+rm -f "$d/stages/.stage_2_done" "$d/stages/.stage_3_done" "$d/stages/.pipeline_done"
+env REVIEWER_VERDICT_FILE="$VF" "$STAGEFORGE" resume "$d" -t "durable" > "$d/resume.log" 2>&1; rc=$?
 check "durable: resume completes" 0 "$rc"
-check "durable: budget persisted across runs" 1 "$(grep -c 'Rollbacks used: 1/1' "$d/resume.log" | tr -d ' ')"
+check "durable: persisted budget blocks the new escalation" 1 "$(grep -c 'budget is exhausted' "$d/resume.log" | tr -d ' ')"
+check "durable: no second rollback recorded" 1 "$(count_rollbacks "$d/stages/.rollbacks")"
+check "durable: status reports lifetime budget" 1 "$(grep -c 'Rollbacks used: 1/1 (lifetime per project' "$d/resume.log" | tr -d ' ')"
 
 echo
 echo "Passed: $PASS  Failed: $FAIL"

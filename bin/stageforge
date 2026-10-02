@@ -261,7 +261,7 @@ cmd_status() {
     [[ "$rb_max" =~ ^[0-9]+$ ]] || rb_max=3
     local rb_used=0
     [[ -f "$project_dir/stages/.rollbacks" ]] && rb_used=$(wc -l < "$project_dir/stages/.rollbacks" | tr -d ' ')
-    info "Rollbacks used: $rb_used/$rb_max"
+    info "Rollbacks used: $rb_used/$rb_max (lifetime per project, counted in stages/.rollbacks; delete that file to reset)"
 
     local cur_run_id
     cur_run_id=$(signal_current_run_id "$project_dir")
@@ -442,6 +442,9 @@ run_pipeline() {
     local s="$start_stage"
     while (( s <= 3 )); do
         local stage_name prompt_text model
+        stage_name=""
+        prompt_text=""
+        model=""
         case "$s" in
             0)
                 stage_name="planner"
@@ -463,6 +466,13 @@ run_pipeline() {
                 prompt_text="$(cat "$PROJECT_ROOT/prompts/consultant.md")\n\n$run_id_block\n\n## Project Directory\n$project_dir"
                 model="${CONSULTANT_MODEL:-}"
                 ;;
+            *)
+                # Unreachable: $s is always a plain integer in [0,3] here
+                # (start_stage is validated, return_to is normalized). Kept
+                # so a future non-integer can never silently reuse the
+                # previous iteration's stage_name/prompt/model.
+                error "Internal error: unknown stage number '$s'."
+                ;;
         esac
 
         stage "$s" "$stage_name"
@@ -483,29 +493,42 @@ run_pipeline() {
         return_to="${verdict_read#*|}"
 
         if [[ "$verdict" == "needs_work" ]]; then
-            if [[ ! "$return_to" =~ ^[0-9]+$ ]] || (( return_to >= s )); then
-                warn "Stage $s wrote verdict 'needs_work' with invalid return_to '${return_to:-<missing>}' (expected integer in [0, $((s - 1))]) — treating as ok and continuing."
+            if ! [[ "$return_to" =~ ^[0-9]+$ ]] || (( 10#$return_to >= s )); then
+                if [[ "$s" -eq 0 ]]; then
+                    warn "Stage 0 wrote verdict 'needs_work' with return_to '${return_to:-<missing>}', but there is no earlier stage to return to — treating as ok and continuing."
+                else
+                    warn "Stage $s wrote verdict 'needs_work' with invalid return_to '${return_to:-<missing>}' (expected integer in [0, $((s - 1))]) — treating as ok and continuing."
+                fi
             elif [[ "$STAGE_MAX_ROLLBACKS" -eq 0 ]]; then
                 warn "Stage $s requested rollback to $return_to but max_rollbacks is 0 — continuing."
             else
+                # Normalize before use: "01" passes the digit check but would
+                # reach `case "$s"` as the string "01", matching no arm.
+                local target=$((10#$return_to))
                 local rb_used=0
                 [[ -f "$project_dir/stages/.rollbacks" ]] && rb_used=$(wc -l < "$project_dir/stages/.rollbacks" | tr -d ' ')
                 if (( rb_used >= STAGE_MAX_ROLLBACKS )); then
-                    warn "Stage $s requested rollback to $return_to but the rollback budget is exhausted ($rb_used/$STAGE_MAX_ROLLBACKS) — continuing."
+                    warn "Stage $s requested rollback to $target but the rollback budget is exhausted ($rb_used/$STAGE_MAX_ROLLBACKS) — continuing."
                 else
-                    if (( return_to < start_stage )); then
-                        warn "Rollback to Stage $return_to crosses this run's start (Stage $start_stage): earlier artifacts, including any manual edits, will be overwritten by the re-run."
+                    if (( target < start_stage )); then
+                        warn "Rollback to Stage $target crosses this run's start (Stage $start_stage): earlier artifacts, including any manual edits, will be overwritten by the re-run."
                     fi
-                    warn "Stage $s requested rollback — rewinding to Stage $return_to."
+                    warn "Stage $s requested rollback — rewinding to Stage $target."
                     # Clean FIRST, then record: a crash in between can only
                     # under-count the budget by one, never consume budget for
                     # a rollback that never happened.
-                    signal_clean_from "$project_dir" "$return_to"
-                    echo "$(date_iso) stage_$s -> stage_$return_to (needs_work)" >> "$project_dir/stages/.rollbacks"
-                    s="$return_to"
+                    signal_clean_from "$project_dir" "$target"
+                    echo "$(date_iso) stage_$s -> stage_$target (needs_work)" >> "$project_dir/stages/.rollbacks"
+                    s="$target"
                     continue
                 fi
             fi
+        elif [[ -n "$verdict" ]] && [[ "$verdict" != "ok" ]]; then
+            # signal_read_verdict's contract: anything that is neither
+            # needs_work nor ok is malformed → warn with the raw value and
+            # continue. Models drift ("NEEDS_WORK", "rework", "needs-work"),
+            # and silence would hide the drift.
+            warn "Stage $s wrote unrecognized verdict '$verdict' — treating as ok and continuing."
         fi
 
         s=$((s + 1))

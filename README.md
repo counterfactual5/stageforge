@@ -160,11 +160,13 @@ models:
   reviewer: ""
   consultant: ""
 
-# Retry count per stage (env STAGEFORGE_MAX_ROLLBACKS... see below)
+# Retry count per stage (env STAGEFORGE_MAX_RETRIES takes precedence)
 max_retries: 3
 
 # Bounded rollbacks: a stage may send the pipeline back to an earlier stage
-# via verdict: needs_work. 0 disables rollback entirely.
+# via verdict: needs_work. Counted in stages/.rollbacks, which is committed
+# to git, so the budget is LIFETIME PER PROJECT (not per run) — delete that
+# file to reset it. 0 disables rollback entirely.
 max_rollbacks: 3
 ```
 

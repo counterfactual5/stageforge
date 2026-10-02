@@ -18,6 +18,8 @@ models:
 max_retries: 3
 
 # How many times a stage may send the pipeline back to an earlier stage
-# (verdict: needs_work). Committed to git as an audit trail; 0 disables
-# rollback. STAGEFORGE_MAX_ROLLBACKS takes precedence.
+# (verdict: needs_work). Rollbacks are counted in stages/.rollbacks, which
+# is committed to git, so the budget is lifetime per project; delete that
+# file to reset it. 0 disables rollback. STAGEFORGE_MAX_ROLLBACKS takes
+# precedence.
 max_rollbacks: 3
