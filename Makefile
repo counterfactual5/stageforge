@@ -17,7 +17,11 @@ uninstall:
 
 test:
 	@echo "Running shellcheck..."
-	@shellcheck bin/stageforge core/*.sh runners/*.sh 2>/dev/null || echo "shellcheck not installed, skipping"
+	@if command -v shellcheck >/dev/null 2>&1; then \
+	    shellcheck bin/stageforge core/*.sh runners/*.sh tests/*.sh; \
+	else \
+	    echo "shellcheck not installed — lint SKIPPED (not a pass)"; \
+	fi
 	@bash -n bin/stageforge && echo "bin/stageforge: syntax OK"
 	@bash -n core/compat.sh && echo "core/compat.sh: syntax OK"
 	@bash -n core/lock.sh && echo "core/lock.sh: syntax OK"

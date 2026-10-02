@@ -118,6 +118,33 @@ _cfgval() {
     printf '%s' "$raw"
 }
 
+# Resolve the rollback budget: env > config > built-in 3, mirroring
+# max_retries (0 is honored literally and disables rollback; junk falls back
+# to 3 with a warning). Reads the config directly rather than depending on
+# load_config having run, so cmd_status and run_pipeline agree.
+# Usage: resolve_rollback_budget <project_dir>
+resolve_rollback_budget() {
+    local project_dir="$1" budget="${STAGEFORGE_MAX_ROLLBACKS:-}"
+    if [[ -z "$budget" ]]; then
+        budget=$(_cfgval '^max_rollbacks:[[:space:]]*\K.*' "${CONFIG_FILE:-$project_dir/stageforge.yaml}" 2>/dev/null || true)
+    fi
+    [[ -z "$budget" ]] && budget=3
+    if [[ ! "$budget" =~ ^[0-9]+$ ]]; then
+        warn "Ignoring invalid max_rollbacks: '$budget' (using 3)"
+        budget=3
+    fi
+    printf '%s' "$budget"
+}
+
+# Number of rollbacks already spent in this project (the committed
+# stages/.rollbacks ledger). Echoes 0 when the project has never rolled back.
+# Usage: rollbacks_used <project_dir>
+rollbacks_used() {
+    local project_dir="$1" file="$project_dir/stages/.rollbacks"
+    [[ -f "$file" ]] || { printf '0'; return 0; }
+    wc -l < "$file" | tr -d ' '
+}
+
 # ─── Load Config ───
 load_config() {
     local project_dir="$1"
@@ -253,14 +280,10 @@ cmd_status() {
 
     # Rollback budget visibility: a malformed needs_work fails open (warn +
     # continue), so the remaining budget must be visible somewhere other than
-    # a run's scrollback. Read the same env > config > 3 chain as run_pipeline.
-    local rb_max="${STAGEFORGE_MAX_ROLLBACKS:-}"
-    if [[ -z "$rb_max" ]]; then
-        rb_max=$(_cfgval '^max_rollbacks:[[:space:]]*\K.*' "${CONFIG_FILE:-$project_dir/stageforge.yaml}" 2>/dev/null || true)
-    fi
-    [[ "$rb_max" =~ ^[0-9]+$ ]] || rb_max=3
-    local rb_used=0
-    [[ -f "$project_dir/stages/.rollbacks" ]] && rb_used=$(wc -l < "$project_dir/stages/.rollbacks" | tr -d ' ')
+    # a run's scrollback. Same resolution as run_pipeline.
+    local rb_max rb_used
+    rb_max=$(resolve_rollback_budget "$project_dir")
+    rb_used=$(rollbacks_used "$project_dir")
     info "Rollbacks used: $rb_used/$rb_max (lifetime per project, counted in stages/.rollbacks; delete that file to reset)"
 
     local cur_run_id
@@ -395,7 +418,7 @@ run_pipeline() {
     if [[ -z "$STAGE_MAX_ROLLBACKS" ]]; then
         STAGE_MAX_ROLLBACKS=3
     elif [[ ! "$STAGE_MAX_ROLLBACKS" =~ ^[0-9]+$ ]]; then
-        warn "Ignoring invalid max_rollbacks: '$STAGE_MAX_ROLLBACKS' (using 3)"
+        warn "Ignoring invalid max_retries-style value for max_rollbacks: '$STAGE_MAX_ROLLBACKS' (using 3)"
         STAGE_MAX_ROLLBACKS=3
     fi
 
@@ -505,8 +528,8 @@ run_pipeline() {
                 # Normalize before use: "01" passes the digit check but would
                 # reach `case "$s"` as the string "01", matching no arm.
                 local target=$((10#$return_to))
-                local rb_used=0
-                [[ -f "$project_dir/stages/.rollbacks" ]] && rb_used=$(wc -l < "$project_dir/stages/.rollbacks" | tr -d ' ')
+                local rb_used
+                rb_used=$(rollbacks_used "$project_dir")
                 if (( rb_used >= STAGE_MAX_ROLLBACKS )); then
                     warn "Stage $s requested rollback to $target but the rollback budget is exhausted ($rb_used/$STAGE_MAX_ROLLBACKS) — continuing."
                 else
