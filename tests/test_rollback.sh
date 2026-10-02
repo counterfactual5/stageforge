@@ -158,6 +158,15 @@ check "unknown verdict: pipeline completes" 0 "$rc"
 check "unknown verdict: no rewind" 1 "$(count_in_log "$d/stages-invocations.log" planner)"
 check "unknown verdict: warn names the raw value" 1 "$(grep -c "unrecognized verdict 'NEEDS_WORK'" "$d/output.log" | tr -d ' ')"
 
+# ── 6. Trailing whitespace / CR in the verdict value still escalates ──
+d="$base/dirty-verdict"; mkdir -p "$d"
+VF="$d/verdict.txt"
+printf 'verdict: needs_work \r\nreturn_to: 0 \r\n' > "$VF"
+rc=$(run_pipeline_case "$d" "REVIEWER_VERDICT_FILE=$VF" "max_rollbacks: 1")
+check "CRLF/trailing-space verdict: pipeline completes" 0 "$rc"
+check "CRLF/trailing-space verdict: still recognized as needs_work" 2 "$(count_in_log "$d/stages-invocations.log" planner)"
+check "CRLF/trailing-space verdict: one rollback recorded" 1 "$(count_rollbacks "$d/stages/.rollbacks")"
+
 # ── 7. max_rollbacks: 0 disables rollback entirely ──
 d="$base/zero"; mkdir -p "$d"
 VF="$d/verdict.txt"
@@ -181,6 +190,24 @@ check "durable: resume completes" 0 "$rc"
 check "durable: persisted budget blocks the new escalation" 1 "$(grep -c 'budget is exhausted' "$d/resume.log" | tr -d ' ')"
 check "durable: no second rollback recorded" 1 "$(count_rollbacks "$d/stages/.rollbacks")"
 check "durable: status reports lifetime budget" 1 "$(grep -c 'Rollbacks used: 1/1 (lifetime per project' "$d/resume.log" | tr -d ' ')"
+
+# ── 9. Rollback crossing this run's start boundary warns loudly ──
+d="$base/cross-start"; mkdir -p "$d"
+VF="$d/verdict.txt"
+# First run: no verdict file yet, so the reviewer passes and stages 0-1
+# complete. The budget must stay untouched here, otherwise resume cannot
+# exercise the escalation path at all.
+rc=$(run_pipeline_case "$d" "" "max_rollbacks: 5")
+check "cross-start: setup run completes" 0 "$rc"
+# Re-open the pipeline at stage 2, and escalate only from there.
+rm -f "$d/stages/.stage_2_done" "$d/stages/.stage_3_done" "$d/stages/.pipeline_done"
+write_verdict "$VF" needs_work 0
+env -u STAGEFORGE_MAX_ROLLBACKS REVIEWER_VERDICT_FILE="$VF" "$STAGEFORGE" resume "$d" -t "cross" > "$d/resume.log" 2>&1; rc=$?
+check "cross-start: resume completes" 0 "$rc"
+check "cross-start: resumed from stage 2" yes "$(grep -q 'Resuming from Stage 2' "$d/resume.log" && echo yes || echo no)"
+# The reviewer escalates on every re-run, so the warning appears once per
+# rollback until the budget is spent — assert presence, not an exact count.
+check "cross-start: overwrite warning emitted" yes "$(grep -q "crosses this run's start" "$d/resume.log" && echo yes || echo no)"
 
 echo
 echo "Passed: $PASS  Failed: $FAIL"

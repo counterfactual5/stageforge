@@ -17,10 +17,15 @@
   would let reviewer format drift hang the pipeline. Rollbacks crossing this
   run's start boundary warn loudly: re-runs overwrite artifacts of stages from
   the rollback point onward, including manual edits. `cmd_status` now shows
-  rollback budget usage. In v1 only the reviewer prompt writes verdicts; the
-  mechanism is stage-agnostic (stage 0's legal domain is empty by construction:
-  any return_to ≥ 0 fails the range check). The `quick` path does not run
-  stages through the pipeline and therefore has no verdict processing.
+  rollback budget usage and states that it is lifetime per project. Verdict
+  values are trimmed on both sides and CR is stripped, so a runner writing
+  `verdict: needs_work` with CRLF endings or trailing spaces is still
+  recognized instead of silently passing; the first matching verdict line
+  wins if a runner writes two. In v1 only the reviewer prompt
+  writes verdicts; the mechanism is stage-agnostic (stage 0's legal domain
+  is empty by construction: any return_to ≥ 0 fails the range check). The
+  `quick` path does not run stages through the pipeline and therefore has
+  no verdict processing.
 
 ### Fixed
 - **Config file was never read** — `load_config` used `\\K` inside a single-quoted

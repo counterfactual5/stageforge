@@ -117,15 +117,21 @@ signal_read_run_id() {
 # ok|needs_work when well-formed; return_to is an integer when present.
 # Callers MUST treat every other shape as malformed (fail-open: warn and
 # continue) — this function only reports what is written, it does not judge.
+# Values are trimmed on BOTH sides and CR is stripped: a runner writing
+# "verdict: needs_work\r" (CRLF) or trailing spaces would otherwise miss the
+# needs_work comparison silently and be treated as a bare pass.
+# The FIRST matching line wins (grep -m1), so a runner that writes two
+# verdict lines is governed by the first one.
 # Usage: signal_read_verdict <stage_num> <project_dir>
 signal_read_verdict() {
     local stage_num="$1"
     local project_dir="$2"
     local signal_file="$project_dir/stages/.stage_${stage_num}_done"
     local v="" r=""
+    local trim='s/^[[:space:]]+//; s/[[:space:]]+$//; s/\r$//'
     if [[ -f "$signal_file" ]]; then
-        v=$(grep -m1 '^verdict:' "$signal_file" 2>/dev/null | sed -E 's/^verdict:[[:space:]]*//' || true)
-        r=$(grep -m1 '^return_to:' "$signal_file" 2>/dev/null | sed -E 's/^return_to:[[:space:]]*//' || true)
+        v=$(grep -m1 '^verdict:' "$signal_file" 2>/dev/null | sed -E 's/^verdict:[[:space:]]*//' | sed -E "$trim" || true)
+        r=$(grep -m1 '^return_to:' "$signal_file" 2>/dev/null | sed -E 's/^return_to:[[:space:]]*//' | sed -E "$trim" || true)
     fi
     printf '%s|%s\n' "$v" "$r"
 }
